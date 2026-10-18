@@ -6,8 +6,7 @@ const { clamp, rnd, pick, hsv, foldJS, stamp, randId, loadScript } = window.Phos
 const { addWebmDuration, standardMp4 } = window.PhosphorRecording;
 
 /* ================= constants ================= */
-// The ordinary workstation uses 576 lines. Local streaming can request native
-// feedback resolution rather than enlarging this lower-resolution picture.
+// Small startup buffers are replaced with the canvas’s physical pixel size on first layout.
 const SIM_H = 576;
 let simW = 768, simH = window.__phosphorCaptureConfig?.renderHeight || SIM_H, simAspect = simW / simH;
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -15,18 +14,9 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 // Inside a Claude artifact the camera, screen sharing and network links are refused, so those inputs hide there.
 const inArtifact = !!(window.claude && typeof window.claude.use === 'function');
-// The Android app (android/ folder) opens this page with a helper called PhosphorApp. It adds what a phone
-// browser can't do: the picture on a plugged-in projector or TV, reacting to music playing on the phone,
-// and saving photos and videos to the phone's gallery. In a normal browser APP is null and nothing changes.
-const APP = (!inArtifact && window.PhosphorApp && typeof window.PhosphorApp.info === 'function') ? window.PhosphorApp : null;
-let appInfo = {};
-if (APP) {
-  try { appInfo = JSON.parse(APP.info()) || {}; } catch (_) { appInfo = {}; }
-  document.documentElement.classList.add('in-app');
-}
-function onApp(type, fn) {
-  if (APP) window.addEventListener('phosphorapp', (e) => { if (e.detail && e.detail.type === type) fn(e.detail); });
-}
+// This fork is a browser-only visualizer; no native application bridge.
+const APP = null;
+const appInfo = {};
 let params;
 try { params = new URLSearchParams(location.search); } catch (_) { params = new URLSearchParams(); }
 // Keep a copy in the browser so Phosphor Loop opens without internet after one visit (see sw.js)
@@ -746,7 +736,6 @@ function chooseSource(slot, src) {
   if (is3D(src)) lastWorld[sceneGroup(src)] = src;
   if (src === 'camera' && !cam.on) startCamera();
   if (src === 'screen' && !scr.on) startScreen(true);
-  if (src === 'phone') startPhoneLink();
   if (src === 'video' && !vid.on) $('#vidFile').click();
   if (src === 'spectro' && !snd.analyser && snd.src === 'off') toast('The spectrograph draws sound. Under the inputs, pick Computer sound or Microphone.');
   if (src === 'text' && txt.str === TEXT_DEFAULT) toast('Type your own words in the Your text box under the inputs.');
@@ -851,6 +840,7 @@ function syncVisibility() {
 
 function syncUI() {
   const t = loops[edit].tgt;
+  if ($('#sceneSelect')) $('#sceneSelect').value = loops.A.tgt.in1;
   LOOP_SLIDERS.forEach((k) => { sliderEls[k].value = Math.round(t[k]); showSlider(k); });
   MIX_SLIDERS.forEach((k) => { sliderEls[k].value = Math.round(mix.tgt[k]); showSlider(k); });
   $$('#inputs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.src === t.in1 || b.dataset.src === sceneGroup(t.in1))));
@@ -859,7 +849,7 @@ function syncUI() {
   $$('#mirror button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.mirror === t.mirror)));
   $('#mirrorOut').textContent = t.mirror === 0 ? 'OFF' : `${t.mirror} WAY`;
   const usesHere = (s) => t.in1 === s || t.in2 === s;
-  for (const s of ['picture', 'video', 'camera', 'screen', 'phone', 'loop', 'spectro', 'text']) $('#row-' + s).hidden = !usesHere(s);
+  for (const s of ['picture', 'video', 'camera', 'screen', 'loop', 'spectro', 'text']) $('#row-' + s).hidden = !usesHere(s);
   syncTextUI();
   $$('#growSize button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.gsize === (t.growSize ?? 1))));
   $$('#timeShape button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.tshape === (t.timeShape ?? 0))));
@@ -907,8 +897,8 @@ function patchLoop(k, p, force) {
   n.motion = p.motion ?? (force ? false : L.tgt.motion);
   if (keep) { n.in1 = keep; n.specRound = p.specRound ?? L.tgt.specRound; }
   // A look saved with an input that no longer exists falls back to Wave (or no second input)
-  if (!(n.in1 in SRC_ID)) n.in1 = 'wave';
-  if (!(n.in2 in SRC_ID)) n.in2 = 'none';
+  if (!is3D(n.in1) || n.in1 === 'ribbit') n.in1 = 'mercury';
+  if (!is3D(n.in2) || n.in2 === 'ribbit') n.in2 = 'none';
   Object.assign(L.tgt, n);
   L.base = { ...L.tgt };
   // Each whole new look gets a number, so More like this and Not this know when it's the same look rated twice
@@ -938,8 +928,7 @@ function surpriseSelf() {
 function randomLoop() {
   const zoom = Math.round(Math.random() < 0.25 ? rnd(-45, -10) : rnd(5, 65));
   // One chance each, so every 3D world and fractal comes up as often as Wave or Shape
-  const in1 = pick(['wave', 'shape', 'bars', 'sparks', 'ink', 'picture', 'text', ...allScenes(),
-                    ...(snd.analyser ? ['spectro'] : [])]);
+  const in1 = pick(allScenes().filter((src) => src !== 'ribbit'));
   return {
     in1, size: in1 === 'bars' || in1 === 'picture' ? 50 : in1 === 'text' ? 85 : 100, specRound: Math.random() < 0.5,
     form: 2 + Math.floor(Math.random() * 4),
@@ -1007,152 +996,12 @@ if (inArtifact) $('#soundGroup').hidden = true;
 const specStatus = $('#specStatus');
 const SPEC_IDLE = 'The spectrograph needs something to listen to. Pick one:';
 function sndSay(html, warn, offerMic) {
+  const disconnect = $('#disconnectAudio');
+  if (disconnect) disconnect.hidden = !snd.track;
   say(sndStatus, html, warn); sndRetry.hidden = !warn; $('#sndUseMic').hidden = !offerMic;
   say(specStatus, snd.src === 'off' ? SPEC_IDLE : html, warn && snd.src !== 'off');
 }
 
-// Android app: "Phone sound" hears whatever the phone plays (Spotify, YouTube, games). Android asks first,
-// then the app streams the sound here in small pieces. Each piece goes straight to the picture, and a copy
-// becomes an ordinary audio track so a recording can keep the sound.
-const appSnd = { ctx: null, dest: null, node: null, push: null, on: false, session: 0, heard: 0, quiet: null };
-// The recording's copy waits in a short queue (about 40-60 ms) so it stays in step with the picture
-const FEED_WORKLET = `class PLFeed extends AudioWorkletProcessor {
-  constructor() {
-    super(); this.q = []; this.off = 0; this.len = 0; this.go = false;
-    this.port.onmessage = (e) => {
-      this.q.push(e.data); this.len += e.data.length;
-      if (this.len - this.off > sampleRate * 0.15) {
-        while (this.len - this.off > sampleRate * 0.06 && this.q.length > 1) { this.len -= this.q.shift().length; this.off = 0; }
-      }
-    };
-  }
-  process(inputs, outputs) {
-    const out = outputs[0][0];
-    if (!out) return true;
-    if (!this.go && this.len - this.off >= sampleRate * 0.04) this.go = true;
-    let i = 0;
-    while (this.go && i < out.length && this.q.length) {
-      const h = this.q[0], n = Math.min(out.length - i, h.length - this.off);
-      out.set(h.subarray(this.off, this.off + n), i); i += n; this.off += n;
-      if (this.off >= h.length) { this.q.shift(); this.len -= h.length; this.off = 0; }
-    }
-    if (i < out.length) { out.fill(0, i); this.go = false; }
-    return true;
-  }
-}
-registerProcessor('pl-feed', PLFeed);`;
-if (APP) {
-  $$('[data-snd="system"]').forEach((b) => { b.textContent = 'Phone sound'; });
-  $('#sndHint').innerHTML = 'Play music in Spotify, YouTube or any app on this phone and choose <b>Phone sound</b>, or let the <b>Microphone</b> hear the room. Record keeps the sound too.';
-  window.addEventListener('message', (e) => {
-    if (e.data !== 'phosphor-sound-port' || !e.ports || !e.ports[0]) return;
-    e.ports[0].onmessage = (m) => appSoundChunk(m.data);
-  });
-}
-function appSoundClose() {
-  if (appSnd.ctx || appSnd.on) { try { APP.stopSound(); } catch (_) {} }
-  clearTimeout(appSnd.quiet);
-  if (appSnd.node) { try { appSnd.node.disconnect(); } catch (_) {} }
-  if (appSnd.ctx) { try { appSnd.ctx.close(); } catch (_) {} }
-  Object.assign(appSnd, { ctx: null, dest: null, node: null, push: null, on: false });
-}
-// Built during the tap, so the phone lets the sound run
-function appSoundPrepare() {
-  appSoundClose();
-  const AC = window.AudioContext || window.webkitAudioContext;
-  let ctx;
-  try { ctx = new AC({ sampleRate: 48000 }); } catch (_) { ctx = new AC(); }
-  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-  const dest = ctx.createMediaStreamDestination();
-  const sink = ctx.createGain();   // silent, but keeps the phone's audio engine pulling samples through
-  sink.gain.value = 0;
-  sink.connect(ctx.destination);
-  Object.assign(appSnd, { ctx, dest, session: appSnd.session + 1, heard: 0 });
-  const attach = (node, push) => {
-    if (appSnd.ctx !== ctx) { try { node.disconnect(); } catch (_) {} return; }
-    node.connect(dest); node.connect(sink);
-    appSnd.node = node; appSnd.push = push;
-  };
-  (async () => {
-    if (ctx.audioWorklet && window.AudioWorkletNode) {
-      try {
-        const url = URL.createObjectURL(new Blob([FEED_WORKLET], { type: 'application/javascript' }));
-        await ctx.audioWorklet.addModule(url);
-        URL.revokeObjectURL(url);
-        const node = new AudioWorkletNode(ctx, 'pl-feed', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] });
-        attach(node, (f) => node.port.postMessage(f, [f.buffer]));
-        return;
-      } catch (_) {}
-    }
-    // Older phones: fill the sound from the page itself
-    const q = [];
-    let off = 0;
-    const node = ctx.createScriptProcessor(2048, 1, 1);
-    node.onaudioprocess = (e) => {
-      const out = e.outputBuffer.getChannelData(0);
-      let i = 0;
-      while (i < out.length && q.length) {
-        const h = q[0], n = Math.min(out.length - i, h.length - off);
-        out.set(h.subarray(off, off + n), i); i += n; off += n;
-        if (off >= h.length) { q.shift(); off = 0; }
-      }
-      if (i < out.length) out.fill(0, i);
-      while (q.length > 7) { q.shift(); off = 0; }
-    };
-    attach(node, (f) => q.push(f));
-  })();
-}
-function appSoundChunk(data) {
-  if (!appSnd.on || typeof data !== 'string') return;
-  let bin;
-  try { bin = atob(data); } catch (_) { return; }
-  const n = bin.length >> 1, f = new Float32Array(n);
-  let peak = 0;
-  for (let i = 0, j = 0; i < n; i++, j += 2) {
-    let v = bin.charCodeAt(j) | (bin.charCodeAt(j + 1) << 8);
-    if (v > 32767) v -= 65536;
-    f[i] = v / 32768;
-    if (v > peak) peak = v; else if (-v > peak) peak = -v;
-  }
-  if (peak > 64) appSnd.heard = performance.now();
-  // Straight to the picture first; the copy handed on below only feeds a recording's sound track
-  if (snd.appFeed) snd.appFeed.push(f);
-  if (appSnd.push) appSnd.push(f);
-}
-function appSound() {
-  if (!appInfo.sound) { sndSay('This phone can’t share its own sound with apps (that needs Android 10 or newer). Use the <b>Microphone</b> instead.', false, true); return; }
-  appSoundPrepare();
-  sndSay('Android asks whether Phosphor Loop may record or cast your screen. Tap <b>Start</b> (or <b>Start now</b>). Only the sound is used, and nothing is saved or sent anywhere.');
-  try { APP.startSound(Math.round(appSnd.ctx.sampleRate), appSnd.session); }
-  catch (_) { appSoundClose(); sndSay('The phone’s sound couldn’t start. Press Try again, or use the Microphone.', true, true); }
-}
-onApp('sound', (d) => {
-  if (d.session !== appSnd.session) return;
-  if (d.state === 'started') {
-    if (snd.src !== 'system' || !appSnd.dest) { appSoundClose(); return; }
-    appSnd.on = true;
-    listen(new MediaStream(appSnd.dest.stream.getAudioTracks()), d.rate || appSnd.ctx.sampleRate);
-    sndSay('<span class="live"></span><b>Listening to this phone’s sound.</b> Play music in any app. Android shows that Phosphor Loop is sharing; only the sound is used.');
-    clearTimeout(appSnd.quiet);
-    appSnd.quiet = setTimeout(() => {
-      if (appSnd.on && snd.src === 'system' && !appSnd.heard) {
-        sndSay('Listening, but nothing has come through yet. Start some music. If the bars still don’t move, that app keeps its sound to itself, so use the <b>Microphone</b> instead.', false, true);
-      }
-    }, 15000);
-  } else if (d.state === 'stopped') {
-    if (!appSnd.on || snd.src !== 'system') return;
-    stopSound();
-    snd.src = 'off';
-    syncSoundUI();
-    toast('The phone’s sound stopped. Choose Phone sound or Microphone to listen again.');
-  } else {
-    if (snd.src !== 'system') return;
-    appSoundClose();
-    if (d.state === 'denied') sndSay('Android didn’t start sharing. Press Try again and tap <b>Start</b>.', true);
-    else if (d.state === 'mic-denied') sndSay('Android files the phone’s sound under the <b>Microphone</b> permission. Press Try again and choose <b>Allow</b>.', true);
-    else sndSay('The phone’s sound couldn’t start. Press Try again, or use the Microphone.', true, true);
-  }
-});
 function syncSoundUI() {
   $$('#soundSrc button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.snd === snd.src)));
   $$('#specListen button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.snd === snd.src)));
@@ -1279,7 +1128,6 @@ function useTap(track) {
   return true;
 }
 function stopSound() {
-  if (APP) appSoundClose();
   dropTap();
   if (snd.stream) snd.stream.getTracks().forEach((t) => t.stop());
   if (snd.source) { try { snd.source.disconnect(); } catch (_) {} }
@@ -1301,10 +1149,11 @@ function listen(stream, appRate) {
     stopSound();
     snd.src = 'off';
     syncSoundUI();
-    toast('The sound stopped. Choose Computer sound or Microphone to listen again.');
+    sndSay('Audio sharing stopped. Click Share audio to reconnect.');
   });
 }
 async function setSound(src) {
+  if (!['off', 'system', 'loopback'].includes(src)) src = 'system';
   const request = ++soundRequest;
   stopSound();
   snd.src = src;
@@ -1322,9 +1171,10 @@ async function setSound(src) {
         if (!ins.some((d) => d.label)) {
           // Device names are private until audio input access has been granted.
           const permission = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-          permission.getTracks().forEach((t) => t.stop());
-          if (request !== soundRequest) return;
-          ins = await listMics();
+          // Keep permission alive while reading labels: some browsers hide them
+          // again as soon as the last input track stops.
+          try { if (request === soundRequest) ins = await listMics(); }
+          finally { permission.getTracks().forEach((t) => t.stop()); }
           if (request !== soundRequest) return;
         }
         const adapters = ins.filter((d) => LOOPBACK.test(d.label));
@@ -1364,31 +1214,37 @@ async function setSound(src) {
     }
     return;
   }
-  if (APP) { appSound(); return; }
-  if (noScreenAudio || !navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-    sndSay(`${noScreenAudio ? browserName : 'This browser'} can’t pass the computer’s sound to web pages, so Computer sound needs <b>Chrome</b> or <b>Edge</b>. ` +
-      'Here you can use the microphone instead. On Windows, choose <b>Stereo Mix</b> when asked which microphone, and it hears the computer’s own sound.', false, true);
+  if (!navigator.mediaDevices?.getDisplayMedia) {
+    sndSay('Audio sharing is unavailable here. Open this page over HTTPS in a desktop browser such as Chrome or Edge. You can still explore the visualizers without audio.', true);
     return;
   }
-  sndSay('In the box that opens, pick a screen on the <b>Entire Screen</b> tab (Screen 1 or Screen 2, either one gives the whole computer’s sound), switch on <b>Also share system audio</b>, then press <b>Share</b>.');
+  sndSay('Choose a tab playing music and enable Share tab audio. If your browser offers system audio, you can share a screen with audio instead.');
   try {
     const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { displaySurface: 'monitor' },   // opens the box on the screens tab, where system audio lives
+      video: { displaySurface: 'browser' },
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: false },
-      systemAudio: 'include', selfBrowserSurface: 'exclude', surfaceSwitching: 'include', monitorTypeSurfaces: 'include',
+      systemAudio: 'include', selfBrowserSurface: 'exclude', surfaceSwitching: 'include',
     });
-    stream.getVideoTracks().forEach((t) => t.stop());   // only the sound is used
-    if (snd.src !== 'system') { stream.getTracks().forEach((t) => t.stop()); return; }
+    if (request !== soundRequest) { stream.getTracks().forEach((t) => t.stop()); return; }
     if (!stream.getAudioTracks().length) {
-      sndSay('No sound came through. Press Try again and switch on <b>Also share system audio</b> under the screen you pick. No switch there? Choose <b>Microphone</b> instead and pick <b>Stereo Mix</b> under Listen to (the Guide shows how to turn it on).', true);
+      stream.getTracks().forEach((t) => t.stop());
+      sndSay('No audio was shared. Try again: choose a tab playing music and enable Share tab audio, or choose a screen with system audio if offered. Audio sharing depends on your browser and operating system; try desktop Chrome or Edge.', true);
       return;
     }
+    // Retain the sharing session until disconnect; stopping its video track can
+    // end the entire session in some browsers. Only audio enters the analyser.
     listen(stream);
-    sndSay('<span class="live"></span><b>Listening to this computer’s sound.</b> Chrome shows a sharing bar while it listens; only the sound is used.');
+    sndSay('<span class="live"></span><b>Listening to shared audio.</b> Only the audio is used by the visualizer. Stop sharing in your browser or disconnect below.');
   } catch (err) {
-    sndSay('Sharing was cancelled. Press Try again, pick <b>Screen 1</b> or <b>Screen 2</b>, and switch on <b>Also share system audio</b>.', true);
+    if (request !== soundRequest) return;
+    if (err?.name === 'NotAllowedError' || err?.name === 'AbortError')
+      sndSay('Sharing was cancelled or blocked. Click Share audio to try again. No microphone access is needed.', true);
+    else if (err?.name === 'InvalidStateError')
+      sndSay('Click Share audio to open the browser’s sharing picker. Audio sharing must start from a click.', true);
+    else sndSay('Audio sharing could not start. Try a music tab in desktop Chrome or Edge; available audio sources depend on your browser and operating system.', true);
   }
 }
+
 async function listMics() {
   try {
     const ins = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput' && d.deviceId !== 'default' && d.deviceId !== 'communications');
@@ -1716,14 +1572,14 @@ function limFold(k, v) {
   return clamp(v, r[0], r[1]);
 }
 // Autopilot settings, kept in this browser. Sliders run 0-100; every and fade map to seconds below.
-const AP_KEY = 'phosphor-autopilot-v1';
+const AP_KEY = 'phosphor-min-autopilot-v1';
 // Each kind of input Autopilot can bring in, and its toggle under Autopilot settings (all 3D worlds share one,
 // and all the fractals another)
 const AP_INPUTS = [['wave', 'Wave'], ['shape', 'Shape'], ['bars', 'Bars'], ['sparks', 'Sparks'], ['ink', 'Ink'], ['text', 'Text'], ['spectro', 'Spectrograph'],
   ['world', '3D worlds'], ['fractal', 'Fractals'], ['picture', 'Picture'], ['video', 'Video'], ['camera', 'Camera'], ['screen', 'Screen'], ['phone', 'Phone'], ['loop', 'Other loop']];
 const AP_INPUT_KEYS = AP_INPUTS.map(([k]) => k);
 const cleanOff = (v) => (Array.isArray(v) ? [...new Set(v.filter((k) => AP_INPUT_KEYS.includes(k)))].slice(0, AP_INPUT_KEYS.length - 1) : []);
-const AP_DEFAULTS = { every: 44, fade: 63, wild: 50, mix: 50, taste: 50, beat: false, check: true, hints: true, fsKeep: false, touch: 'pin', off: [] };
+const AP_DEFAULTS = { every: 44, fade: 63, wild: 50, mix: 50, taste: 0, beat: false, check: true, hints: false, fsKeep: false, touch: 'pin', off: [] };
 // When you move a control while Autopilot runs: pin it ('pin'), just play along without pinning ('play'), or stop
 // Autopilot ('stop')
 const cleanTouch = (v) => (v === 'stop' || v === 'play' ? v : 'pin');
@@ -1743,7 +1599,7 @@ try {
   }
 } catch (_) {}
 // Whether Autopilot may bring in this input (one switched off under Autopilot settings stays out)
-const apAllowed = (src) => !apSet.off.includes(sceneGroup(src) || src);
+const apAllowed = (src) => is3D(src) && src !== 'ribbit' && !apSet.off.includes(sceneGroup(src) || src);
 function saveAp() {
   try { localStorage.setItem(AP_KEY, JSON.stringify({ ...apSet, pins: [...ap.pins] })); } catch (_) {}
 }
@@ -2342,14 +2198,14 @@ function apPool() {
   // Leave out the inputs switched off under Autopilot settings. If that leaves nothing it can use right now
   // (say only Camera is on, and no camera is running), it uses them all rather than stall.
   const ok = pool.filter(apAllowed);
-  return ok.length ? ok : pool;
+  return ok.length ? ok : allScenes().filter((src) => src !== 'ribbit');
 }
 // Autopilot's pick of an input from a list. The 3D worlds and fractals as a showcase (clean, building up slowly, a
 // longer stay: see rampStart) come up a tenth as often as they would with one chance each like the rest: with nine
 // worlds and six fractals against eight other inputs, about 1 new look in 15 instead of 2 in 3. Fractals also come
 // up as an ordinary input, all six together having the same chance as Wave or Shape, with effects and timing like
 // any other look; then out.asInput is set, so the look gets no showcase.
-const AP_WORLD_SHARE = 0.1;
+const AP_WORLD_SHARE = 1;
 function apPick(list, out) {
   const worlds = list.filter(is3D), fracs = worlds.filter((x) => sceneGroup(x) === 'fractal');
   const rest = list.filter((x) => !is3D(x)).concat(fracs.length ? ['fractal-as-input'] : []);
@@ -2823,6 +2679,9 @@ function saveTaste() {
 // being trained again together with its new ratings), otherwise the lit profile, otherwise nothing (no profile lit,
 // or a shared one that hasn't arrived yet). target: where new ratings go.
 function tasteSource() {
+  return { kind: 'none', name: '', votes: [] };
+}
+function legacyTasteSource() {
   const S = taste.session;
   if (S) {
     const p = S.into && taste.profiles.find((x) => x.id === S.into);
@@ -3239,7 +3098,8 @@ function tasteMix(opts, k) {
 
 // More like this (dir 1) and Not this (dir -1), for the whole picture on screen: both loops and how they mix
 const rateBtns = { 1: $('#rateUp'), [-1]: $('#rateDown') };
-function rate(dir) {
+function rate(dir) { return;
+
   const now = performance.now(), gens = tasteGens(), look = lookOnScreen, scene = tasteSceneNow();
   const { votes, note } = tasteTarget();
   let added = 0;
@@ -3963,7 +3823,7 @@ function fsWake(ms = 3000) {
   stage.classList.remove('idle');
   clearTimeout(fsIdleT);
   fsIdleT = setTimeout(() => {
-    if (fsExit.matches(':hover') || fsTaste.matches(':hover')) { fsWake(); return; }
+    if (fsExit.matches(':hover') || fsTaste.matches(':hover') || $('.bottom-bar').matches(':hover, :focus-within')) { fsWake(); return; }
     fsExit.classList.add('away');
     if (!(apSet.fsKeep && taste.session)) fsTaste.classList.add('away');
     stage.classList.add('idle');
@@ -3977,7 +3837,7 @@ stage.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse') fs
 fsExit.addEventListener('click', () => { if (isFS()) toggleFS(); });
 ['fullscreenchange', 'webkitfullscreenchange'].forEach((ev) => document.addEventListener(ev, () => {
   const active = isFS();
-  fullBtn.textContent = active ? 'Exit full screen' : 'Full screen';
+  fullBtn.textContent = active ? 'Exit full screen (F)' : 'Full screen (F)';
   fsExit.hidden = !active;
   fsTasteShow();
   if (active) fsWake(4000);
@@ -4307,7 +4167,7 @@ function vcrTick() {
 fillTrack(vidPos);
 
 /* ================= picture adjustments ================= */
-const ADJ_SRC = ['picture', 'video', 'camera', 'screen', 'phone', 'loop'];
+const ADJ_SRC = ['picture', 'video', 'camera', 'screen', 'loop'];
 const ADJ_DEF = [
   ['tracking', 'Tracking', 0, 100, 'Clean', 'Chewed tape', false],
   ['bright', 'Brightness', -100, 100, 'Darker', 'Brighter', true],
@@ -4457,7 +4317,6 @@ async function listCameras() {
 camSel.addEventListener('change', () => { camDeviceId = camSel.value; cam.detach(); startCamera(); });
 camRetry.addEventListener('click', () => { if (uses('camera')) startCamera(); });
 // Android lets go of the camera while the app is in the background; take it back on return
-onApp('resume', () => { if (uses('camera') && !cam.on) startCamera(); });
 $('#camOff').addEventListener('click', () => dropSource('camera'));
 
 // Swap a device out of every slot that uses it
@@ -4507,175 +4366,6 @@ function stopScreen() { scr.detach(); scrSay('Not sharing.'); }
 $('#scrSelf').addEventListener('click', () => { scr.detach(); startScreen(true); });
 $('#scrOther').addEventListener('click', () => { scr.detach(); startScreen(false); });
 $('#scrStop').addEventListener('click', () => dropSource('screen'));
-
-/* ================= phone link ================= */
-// Uses the free PeerJS connection service only to introduce the phone and this page;
-// the video itself travels phone-to-computer over WebRTC.
-const SIGNAL_URL = params.get('signal') || 'wss://0.peerjs.com:443/peerjs';
-const ICE = { iceServers: [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
-] };
-const phoneOK = !inArtifact && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
-const phoStatus = $('#phoStatus'), phoRetry = $('#phoRetry'), phoOff = $('#phoOff');
-function phoSay(html, warn) { say(phoStatus, html, warn); phoRetry.hidden = !warn; phoOff.hidden = !pho.on; }
-
-class Signal {
-  constructor(base, id, h) { this.base = base; this.id = id; this.h = h; this.ws = null; this.hb = null; this.closed = false; this.open = false; }
-  connect() {
-    const token = randId(12);
-    let ws;
-    try { ws = new WebSocket(`${this.base}?key=peerjs&id=${encodeURIComponent(this.id)}&token=${token}&version=1.5.5`); }
-    catch (e) { setTimeout(() => this.h.lost && this.h.lost(false), 0); return; }
-    this.ws = ws;
-    ws.onmessage = (e) => {
-      let m;
-      try { m = JSON.parse(e.data); } catch (_) { return; }
-      if (m.type === 'OPEN') { this.open = true; this.h.open && this.h.open(); }
-      else if (m.type === 'ID-TAKEN') this.h.error && this.h.error('id-taken');
-      else if (m.type === 'ERROR') this.h.error && this.h.error('server');
-      else this.h.message && this.h.message(m);
-    };
-    ws.onclose = () => {
-      clearInterval(this.hb);
-      const was = this.open;
-      this.open = false; this.ws = null;
-      if (!this.closed && this.h.lost) this.h.lost(was);
-    };
-    this.hb = setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'HEARTBEAT' })); }, 5000);
-  }
-  send(type, dst, payload) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify({ type, dst, payload })); }
-  close() { this.closed = true; clearInterval(this.hb); if (this.ws) { try { this.ws.close(); } catch (_) {} } }
-}
-
-let sig = null, deskId = null, sigFails = 0;
-let phonePC = null, phonePeer = null, phoneConn = null, phoneCands = [];
-let qrReady = false;
-
-function phoneURL() {
-  const u = new URL('phone.html', location.href);
-  u.search = ''; u.hash = '';
-  u.searchParams.set('id', deskId);
-  if (params.get('signal')) u.searchParams.set('signal', params.get('signal'));
-  return u.toString();
-}
-async function drawQR() {
-  const url = phoneURL();
-  $('#qrUrl').textContent = url;
-  $('#qrWrap').hidden = false;
-  try {
-    if (!window.qrcode) await loadScript('qrcode.js');
-    const qr = window.qrcode(0, 'M');
-    qr.addData(url);
-    qr.make();
-    const n = qr.getModuleCount(), quiet = 3, scale = Math.max(2, Math.floor(256 / (n + quiet * 2)));
-    const c = $('#qr');
-    c.width = c.height = (n + quiet * 2) * scale;
-    const g = c.getContext('2d');
-    g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
-    g.fillStyle = '#000';
-    for (let r = 0; r < n; r++) for (let q = 0; q < n; q++) if (qr.isDark(r, q)) g.fillRect((q + quiet) * scale, (r + quiet) * scale, scale, scale);
-    qrReady = true;
-  } catch (_) {
-    $('#qr').hidden = true;
-    say(phoStatus, 'The QR code couldn’t be drawn (qrcode.js is missing next to this page). Open the address above on your phone instead.', true);
-  }
-}
-function startPhoneLink() {
-  if (!phoneOK) {
-    $('#qrWrap').hidden = true;
-    phoSay(inArtifact
-      ? 'Connecting a phone isn’t available in this preview. Open Phosphor Loop from its own web address.'
-      : 'Connecting a phone works when Phosphor Loop is opened from its web address (https://…), not from a file on your computer.', false);
-    phoRetry.hidden = true;
-    return;
-  }
-  if (sig && !sig.closed) return;
-  if (!deskId) deskId = 'phosphorloop-' + randId(10);
-  if (!pho.on) phoSay('Getting a connection code…');
-  sig = new Signal(SIGNAL_URL, deskId, {
-    open() {
-      sigFails = 0;
-      if (!qrReady) drawQR();
-      if (!pho.on) phoSay('Waiting for your phone…');
-    },
-    message: onPhoneSignal,
-    error(kind) {
-      sig.close(); sig = null;
-      if (kind === 'id-taken') { deskId = null; qrReady = false; startPhoneLink(); }
-      else phoSay('The connection service had a problem. Press Try again.', true);
-    },
-    lost() {
-      sig = null;
-      sigFails++;
-      if (sigFails <= 3) { if (!pho.on) phoSay('Reconnecting to the connection service…'); setTimeout(startPhoneLink, 1500 * sigFails); }
-      else if (!pho.on) phoSay('Couldn’t reach the connection service. Check your internet connection, then press Try again.', true);
-    },
-  });
-  sig.connect();
-}
-function closePhonePC() {
-  if (phonePC) { try { phonePC.close(); } catch (_) {} }
-  phonePC = null; phoneCands = [];
-}
-function phoneGone(text) {
-  closePhonePC();
-  pho.detach();
-  phoSay(text + (qrReady ? ' Scan the code to connect again.' : ''), false);
-}
-async function onPhoneSignal(m) {
-  const p = m.payload || {};
-  if (m.type === 'OFFER') {
-    closePhonePC();
-    phonePeer = m.src; phoneConn = p.connectionId;
-    pho.flip = p.facing === 'user';
-    const pc = new RTCPeerConnection(ICE);
-    phonePC = pc;
-    pc.ontrack = (e) => {
-      const stream = (e.streams && e.streams[0]) || new MediaStream([e.track]);
-      const v = mkVideo();
-      v.srcObject = stream;
-      v.play().catch(() => {});
-      pho.attach(v, stream);
-      phoSay('<span class="live"></span><b>Phone connected.</b> Point it at anything, even this screen.');
-      showOSD('INPUT', 'PHONE');
-      hideTip();
-    };
-    pc.ondatachannel = (e) => {
-      e.channel.onmessage = (ev) => { try { const d = JSON.parse(ev.data); if (d.facing) pho.flip = d.facing === 'user'; } catch (_) {} };
-    };
-    pc.onicecandidate = (e) => { if (e.candidate && sig) sig.send('CANDIDATE', phonePeer, { candidate: e.candidate, type: 'media', connectionId: phoneConn }); };
-    pc.onconnectionstatechange = () => {
-      if (phonePC !== pc) return;
-      const s = pc.connectionState;
-      if (s === 'failed') phoneGone('The phone connection dropped.');
-      else if (s === 'disconnected' && pho.on) phoSay('The phone connection is unsteady…');
-      else if (s === 'connected' && pho.on) phoSay('<span class="live"></span><b>Phone connected.</b> Point it at anything, even this screen.');
-    };
-    try {
-      await pc.setRemoteDescription(p.sdp);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      if (sig) sig.send('ANSWER', phonePeer, { sdp: pc.localDescription, type: 'media', connectionId: phoneConn });
-      for (const c of phoneCands) await pc.addIceCandidate(c).catch(() => {});
-      phoneCands = [];
-      phoSay('Phone found. Starting the picture…');
-    } catch (err) {
-      phoneGone('The phone’s video couldn’t be set up.');
-    }
-  } else if (m.type === 'CANDIDATE') {
-    if (m.src !== phonePeer || p.connectionId !== phoneConn) return;
-    if (phonePC && phonePC.remoteDescription) phonePC.addIceCandidate(p.candidate).catch(() => {});
-    else phoneCands.push(p.candidate);
-  } else if (m.type === 'LEAVE') {
-    if (m.src === phonePeer) phoneGone('Your phone disconnected.');
-  }
-}
-phoRetry.addEventListener('click', () => { sigFails = 0; if (sig) { sig.close(); sig = null; } startPhoneLink(); });
-phoOff.addEventListener('click', () => {
-  if (sig && phonePeer) sig.send('LEAVE', phonePeer, {});
-  phoneGone('Phone disconnected.');
-});
 
 /* ================= drawing on the screen ================= */
 let drawing = false, pCur = null, pPrev = null;
@@ -4827,7 +4517,7 @@ const RECIPES = [
 function recipeBlocked(r) {
   if (!r.needs) return '';
   if (inArtifact) return 'Needs the downloaded copy or your web address. Camera, screen, phone and sound are turned off in this preview.';
-  if (r.needs === 'phone' && !phoneOK) return 'Needs Phosphor Loop opened from its https:// web address.';
+  if (r.needs === 'phone') return 'Needs Phosphor Loop opened from its https:// web address.';
   if (APP && r.needs === 'screen') return 'Needs a computer: phones can’t share their screen with Phosphor Loop.';
   if (APP && r.needs === 'sound') return appInfo.sound || r.anySound ? '' : 'Needs Android 10 or newer to hear the phone’s sound.';
   if (r.anySound) return navigator.mediaDevices ? '' : 'This browser can’t hear sound on this page.';
@@ -4865,7 +4555,6 @@ function applyRecipe(r) {
   const inp = p.A.in1;
   if (inp === 'camera' && !cam.on) startCamera();
   if (inp === 'screen' && !scr.on) startScreen(true);
-  if (inp === 'phone') startPhoneLink();
   let after = r.after;
   if (r.sound) {
     if (r.soundMap) Object.assign(snd.map, r.soundMap);
@@ -5043,7 +4732,6 @@ function loadPreset(pr, quiet) {
   }
   if (used.includes('camera') && !cam.on) startCamera();
   if (used.includes('screen') && !scr.on) startScreen(true);
-  if (used.includes('phone')) startPhoneLink();
   settleDevices();
   setEdit('A');
   syncUI();
@@ -5361,8 +5049,8 @@ function onKey(e) {
   else if (e.key === 'n' || e.key === 'N') neutral();
   else if (e.key === 'c' || e.key === 'C') clearScreen();
   else if (e.key === 'f' || e.key === 'F') toggleFS();
-  else if ((e.key === 'v' || e.key === 'V') && !e.repeat) toggleRec();
-  else if (e.key === 'g' || e.key === 'G' || e.key === '?') openGuide();
+
+
 }
 window.addEventListener('keydown', onKey);
 
@@ -5716,9 +5404,18 @@ recBtn.addEventListener('click', toggleRec);
 const narrowMQ = window.matchMedia('(max-width: 900px)');
 const SHAPES = { fill: 0, tv: 4 / 3, wide: 16 / 9 };
 let shape = 'fill';
-try { const saved = localStorage.getItem('phosphor-shape'); if (saved && saved in SHAPES) shape = saved; } catch (_) {}
+const RENDER_SCALE_KEY = 'phosphor-min-render-scale';
+let renderScale = 1;
+try { const saved = Number(localStorage.getItem(RENDER_SCALE_KEY)); if ([1, 0.75, 0.5].includes(saved)) renderScale = saved; } catch (_) {}
+const renderLimits = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
+const renderMax = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
+function renderDimensions(width, height) {
+  const scale = Math.min(1, renderMax / width, renderMax / height, renderLimits[0] / width, renderLimits[1] / height);
+  return [Math.max(1, Math.floor(width * scale)), Math.max(1, Math.floor(height * scale))];
+}
 
-// Rebuild the loop buffers at a new width, stretching the old picture into them so nothing blinks.
+
+// Rebuild both dimensions, copying the current feedback so resize keeps the picture.
 const copyProg = program(FS_COPY);
 gl.useProgram(copyProg.p);
 set1i(copyProg, 'uSrc', 0);
@@ -5732,19 +5429,28 @@ function copyInto(dst, srcTex) {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 function dropTarget(t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
-function resim(aspect) {
-  const w = clamp(Math.round(simH * aspect / 4) * 4, 256, window.__phosphorCaptureConfig ? 3840 : 1600);
-  if (w === simW) return;
+function resim(width, height) {
+  if (width === simW && height === simH) { $('#renderSize').textContent = `${simW} × ${simH}`; return; }
+  // Release frame history before allocating replacement feedback buffers.
+  for (const L of Object.values(loops)) if (L.tw) twDrop(L);
+
+  let targets;
+  while (true) {
+    targets = Array.from({ length: 5 }, () => makeTarget(width, height));
+    if (targets.every((t) => t.ok)) break;
+    targets.forEach(dropTarget);
+    if (width <= 1 && height <= 1) { fail('The graphics card could not allocate render buffers.'); return; }
+    width = Math.max(1, Math.floor(width / 2)); height = Math.max(1, Math.floor(height / 2));
+  }
   const oldA = loops.A.rt, oldB = loops.B.rt, oldComp = comp;
   const frontA = oldA[loops.A.front].tex, frontB = oldB[loops.B.front].tex;
-  simW = w; simAspect = simW / simH;
-  loops.A.rt = [makeTarget(), makeTarget()];
-  loops.B.rt = [makeTarget(), makeTarget()];
-  comp = makeTarget();
+  simW = width; simH = height; simAspect = simW / simH;
+  loops.A.rt = targets.slice(0, 2); loops.B.rt = targets.slice(2, 4); comp = targets[4];
   copyInto(loops.A.rt[0], frontA);
   copyInto(loops.B.rt[0], frontB);
   loops.A.front = 0; loops.B.front = 0;
   [...oldA, ...oldB, oldComp].forEach(dropTarget);
+  $('#renderSize').textContent = `${simW} × ${simH}`;
 }
 
 let resimTimer = null, firstFit = true;
@@ -5775,23 +5481,35 @@ function fit() {
   } else if (out) {
     // Draw at the output window's own resolution; this screen shows a scaled preview of the same picture
     const ow = Math.max(1, outWin.innerWidth), oh = Math.max(1, outWin.innerHeight);
-    const odpr = Math.min(outWin.devicePixelRatio || 1, 2, Math.sqrt(6e6 / (ow * oh)));
+    const odpr = (outWin.devicePixelRatio || 1) * renderScale;
     cw = Math.max(1, Math.round(ow * odpr)); ch = Math.max(1, Math.round(oh * odpr));
     if (outCanvas.width !== cw || outCanvas.height !== ch) { outCanvas.width = cw; outCanvas.height = ch; }
     aspect = ow / oh;
   } else {
-    // Cap the drawing size so a big 4K full screen stays smooth
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5, Math.sqrt(4.5e6 / (w * h)));
+    // Physical display pixels, including Retina/HiDPI and fullscreen.
+    const dpr = (window.devicePixelRatio || 1) * renderScale;
     cw = Math.max(1, Math.round(w * dpr)); ch = Math.max(1, Math.round(h * dpr));
     aspect = w / h;
   }
+  [cw, ch] = renderDimensions(cw, ch);
   if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
   clearTimeout(resimTimer);
-  if (firstFit) { firstFit = false; resim(aspect); }
-  else resimTimer = setTimeout(() => resim(aspect), 180);
+  const renderH = window.__phosphorCaptureConfig ? (window.__phosphorCaptureConfig.renderHeight || SIM_H) : ch;
+  const renderW = window.__phosphorCaptureConfig ? Math.round(renderH * aspect) : cw;
+  if (firstFit) { firstFit = false; resim(renderW, renderH); }
+  else resimTimer = setTimeout(() => resim(renderW, renderH), 180);
 }
 if (typeof ResizeObserver !== 'undefined') new ResizeObserver(fit).observe(stage);
 window.addEventListener('resize', fit);
+// Moving between screens can change pixel density without changing CSS size.
+let densityQuery;
+function watchDensity() {
+  densityQuery?.removeEventListener('change', densityChanged);
+  densityQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+  densityQuery.addEventListener('change', densityChanged);
+}
+function densityChanged() { watchDensity(); fit(); }
+watchDensity();
 fit();
 
 $$('#shape button').forEach((b) => b.addEventListener('click', () => {
@@ -5926,13 +5644,6 @@ function closeOutput(alreadyClosed) {
   fit();
 }
 outBtn.addEventListener('click', () => (outputOpen() ? closeOutput() : openOutput()));
-// Android app: plugging in a projector or TV puts the picture there by itself; unplugging brings it back
-onApp('display', (d) => {
-  appInfo.display = !!d.connected;
-  outBtn.hidden = !appInfo.display;
-  if (!appInfo.display) { if (outWin) closeOutput(); return; }
-  setTimeout(() => { if (appInfo.display && !outputOpen()) openOutput(); }, 800);
-});
 canvas.addEventListener('webglcontextlost', (e) => {
   e.preventDefault();
   fail('The graphics card reset the screen. Reload the page to start it again.');
@@ -5941,31 +5652,14 @@ window.addEventListener('pagehide', () => {
   if (outWin) { try { outWin.close(); } catch (_) {} }
   stopSound();
   cam.detach(); scr.detach();
-  if (sig && phonePeer) sig.send('LEAVE', phonePeer, {});
 });
 
-/* ================= show mode ================= */
-// For a computer that plays Phosphor Loop at gigs: after a restart it picks up where it left off,
-// reconnects the camera and microphone, opens the output window and keeps the screen awake.
-const SHOW_KEY = 'phosphor-show-v1', LAST_KEY = 'phosphor-last-v1', MIDI_KEY = 'phosphor-midi-v1';
+/* ================= saved browser defaults ================= */
+const LAST_KEY = 'phosphor-min-last-v1', MIDI_KEY = 'phosphor-midi-v1';
+const showMode = false;
+const offlineNote = $('#offlineNote');
 function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); return true; } catch (_) { return false; } }
-// ?show=1 in the address turns it on for that visit; the Show mode button remembers it in this browser
-const showParam = params.get('show');
-let showMode = showParam != null ? showParam !== '0' : lsGet(SHOW_KEY) === '1';
-const showBtn = $('#showBtn'), offlineNote = $('#offlineNote');
-if (inArtifact) $('#showGroup').hidden = true;
-function syncShowUI() { showBtn.setAttribute('aria-pressed', String(showMode)); }
-showBtn.addEventListener('click', () => {
-  showMode = !showMode;
-  lsSet(SHOW_KEY, showMode ? '1' : '0');
-  syncShowUI();
-  if (showMode) {
-    showExtras();
-    toast('Show mode is on. From the next start, Phosphor Loop picks up where you left off and opens the output window.');
-  } else toast('Show mode is off.');
-});
-
 // The current look is saved every couple of seconds, so a power cut costs nothing
 let sessionReady = false, lastSaved = '';
 function saveSession() {
@@ -5992,36 +5686,22 @@ function restoreSession() {
     const L = d[k];
     if (!L) continue;
     for (const slot of ['in1', 'in2']) {
-      if (L[slot] !== 'screen' && L[slot] !== 'video') continue;
+      if (is3D(L[slot]) && L[slot] !== 'ribbit' || slot === 'in2' && L[slot] === 'none') continue;
       missing = L[slot] === 'screen' ? 'Screen' : 'Video';
-      L[slot] = slot === 'in2' ? 'none' : (k === 'A' ? 'wave' : 'shape');
+      L[slot] = slot === 'in2' ? 'none' : (k === 'A' ? 'mercury' : 'cavern');
     }
   }
   if (s.cam) camDeviceId = s.cam;
   loadPreset({ id: null, name: '', data: d }, true);
   if (s.ap) setAutopilot(true, true);
-  if (s.snd && s.snd.src === 'mic') { micDeviceId = s.snd.mic || ''; setSound('mic'); }
-  if (s.snd && s.snd.src === 'loopback') { loopbackDeviceId = s.snd.device || ''; setSound('loopback'); }
-  showOSD('SHOW', 'RESUMED');
+
+  if (s.snd) loopbackDeviceId = s.snd.device || '';
+  showOSD('PHOSPHOR', 'RESUMED');
   if (missing) toast(`Picked up where you left off. Choose ${missing} again to bring it back.`);
   return true;
 }
 
-let wakeLock = null, extrasOn = false;
-async function keepAwake() {
-  if (!showMode || document.hidden || !('wakeLock' in navigator) || (wakeLock && !wakeLock.released)) return;
-  try { wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
-}
-document.addEventListener('visibilitychange', () => { if (!document.hidden) keepAwake(); });
-function showExtras() {
-  keepAwake();
-  hideTip();
-  if (!midi.access) midiStart();
-  if (extrasOn) return;
-  extrasOn = true;
-  // A long press on the touchscreen shouldn't pop a menu up over the controls
-  document.addEventListener('contextmenu', (e) => { if (showMode) e.preventDefault(); });
-}
+
 
 // Show setup can save every nature picture ahead of time, for a show without internet (see sw.js)
 let natSaving = false;
@@ -6436,22 +6116,36 @@ midiClear.addEventListener('click', () => {
 renderMidiList();
 
 function showStart() {
-  syncShowUI();
-  offlineStatus();
-  if (inArtifact) { sessionReady = true; return; }
-  if (showMode) {
-    showExtras();
-    restoreSession();
-    // With a second screen plugged in, open the output window straight away (the browser must allow pop-ups here)
-    if (!APP && window.screen && window.screen.isExtended) setTimeout(() => { if (!outputOpen()) openOutput(); }, 1200);
-  } else if (midiSaved.enabled) midiStart();
-  // The Android app puts the picture on a plugged-in projector or TV straight away, show mode or not
-  if (APP && appInfo.display) setTimeout(() => { if (appInfo.display && !outputOpen()) openOutput(); }, 1200);
+  restoreSession();
   sessionReady = true;
+  sndSay('Click Share audio to connect music from another tab or your computer.');
 }
 
 /* ================= loop ================= */
 const tcEl = $('#tc');
+const currentTexture = $('#currentTexture'), fpsReadout = $('#renderFps');
+let fpsStart = null, fpsFrames = 0;
+document.addEventListener('visibilitychange', () => { fpsStart = null; fpsFrames = 0; });
+function updateRenderStats(now) {
+  if (fpsStart === null) fpsStart = now;
+  else fpsFrames++;
+  if (now - fpsStart >= 500) {
+    fpsReadout.textContent = `${Math.round(fpsFrames * 1000 / (now - fpsStart))} FPS`;
+    fpsStart = now; fpsFrames = 0;
+  }
+  if (frozen) return;
+  const visible = weights(mix.cur.view);
+  const names = [];
+  ['A', 'B'].forEach((key, i) => {
+    if (visible[i] < 0.05) return;
+    const t = loops[key].tgt;
+    for (const src of [t.in1, ...(t.in2 !== 'none' ? [t.in2] : [])]) {
+      if (SRC_LABEL[src] && !names.includes(SRC_LABEL[src])) names.push(SRC_LABEL[src]);
+    }
+  });
+  const text = names.join(' + ');
+  if (currentTexture.textContent !== text) { currentTexture.textContent = text; currentTexture.title = text; }
+}
 let tcLast = -1;
 const t0 = performance.now();
 function updateTC(now) {
@@ -6508,7 +6202,9 @@ const GROW_R = [2.6, 5, 9];   // Grow's ring for Fine, Medium and Big patterns, 
 // is let go a minute after Time warp is turned off, to save memory; a computer keeps it, so turning Time warp
 // on again (or Autopilot bringing it in) never makes the picture hitch while the memory is found.
 function twMake() {
-  const w = Math.max(16, Math.round(simW * TW_SCALE)), h = Math.max(16, Math.round(simH * TW_SCALE));
+  // Bound the 48-frame history to 32 MiB per loop, even at 4K/Retina.
+  const historyScale = Math.min(TW_SCALE, Math.sqrt(32 * 1024 * 1024 / (4 * TW_LAYERS * simW * simH)));
+  const w = Math.max(16, Math.round(simW * historyScale)), h = Math.max(16, Math.round(simH * historyScale));
   for (let i = 0; i < 8 && gl.getError() !== gl.NO_ERROR; i++) {}
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D_ARRAY, tex);
@@ -7277,19 +6973,100 @@ function frame() {
     else { try { outCtx.drawImage(canvas, 0, 0, outCanvas.width, outCanvas.height); } catch (_) {} }
   }
   updateTC(now);
+  updateRenderStats(now);
   // If this window is covered or minimized while the output window is showing, let that window keep the beat
   if (outputOpen() && document.hidden) outWin.requestAnimationFrame(frame);
   else requestAnimationFrame(frame);
 }
 
+/* Minimal personal-site controls. Keep the shared renderer's legacy bindings isolated. */
+function setupMinimalUI() {
+  document.body.classList.add('minimal');
+  const panel = $('.panel');
+  const legacy = document.createElement('div');
+  legacy.hidden = true;
+  while (panel.firstChild) legacy.appendChild(panel.firstChild);
+  panel.appendChild(legacy);
+  const intro = document.createElement('p');
+  intro.className = 'minimal-intro';
+  intro.textContent = '3D textures, moved by your music.';
+  panel.appendChild(intro);
+  const section = (title) => {
+    const el = document.createElement('section'); el.className = 'minimal-section';
+    const h = document.createElement('h2'); h.textContent = title; el.appendChild(h);
+    panel.appendChild(el); return el;
+  };
+  const audio = section('01 / Audio');
+  const connect = document.createElement('button');
+  connect.className = 'btn wide'; connect.id = 'connectAudio';
+  connect.textContent = 'Share audio';
+  connect.addEventListener('click', () => setSound('system'));
+  audio.appendChild(connect);
+  const disconnect = document.createElement('button');
+  disconnect.id = 'disconnectAudio'; disconnect.className = 'btn wide'; disconnect.textContent = 'Disconnect audio'; disconnect.hidden = true;
+  disconnect.addEventListener('click', () => setSound('off'));
+  audio.appendChild(disconnect);
+  audio.appendChild($('#sndStatus'));
+  audio.appendChild($('#mLow').closest('.meter'));
+  audio.appendChild($('#sndAmt').closest('.ctl'));
+  const note = document.createElement('p'); note.className = 'hint';
+  note.textContent = 'No installation needed. Choose a music tab and enable Share tab audio. System audio is available when your browser offers it. Sharing needs a click each visit; your visual settings are remembered.';
+  audio.appendChild(note);
+  const visual = section('02 / Visualizer');
+  const label = document.createElement('label'); label.htmlFor = 'sceneSelect'; label.textContent = 'Texture';
+  const select = document.createElement('select'); select.id = 'sceneSelect';
+  for (const src of allScenes().filter((src) => src !== 'ribbit')) {
+    const opt = document.createElement('option'); opt.value = src; opt.textContent = SRC_LABEL[src]; select.appendChild(opt);
+  }
+  select.addEventListener('change', () => {
+    const source = select.value;
+    takeOver(); setEdit('A'); setDrift(false);
+    applyPatch({ A: { in1: source, trails: 0, size: 85 }, B: { in1: source, trails: 0, size: 85 } });
+    syncUI(); saveSession();
+  });
+  visual.append(label, select);
+  const qualityLabel = document.createElement('label'); qualityLabel.htmlFor = 'renderQuality'; qualityLabel.textContent = 'Render resolution';
+  const quality = document.createElement('select'); quality.id = 'renderQuality';
+  for (const [value, text] of [[1, 'Native (100%)'], [0.75, '75% — faster'], [0.5, '50% — fastest']]) {
+    const option = document.createElement('option'); option.value = value; option.textContent = text; quality.appendChild(option);
+  }
+  quality.value = renderScale;
+  quality.addEventListener('change', () => { renderScale = Number(quality.value); lsSet(RENDER_SCALE_KEY, String(renderScale)); fit(); });
+  visual.append(qualityLabel, quality);
+  for (const id of ['size', 'trails', 'color']) visual.appendChild($('#' + id).closest('.ctl'));
+  const advanced = document.createElement('details');
+  const summary = document.createElement('summary'); summary.textContent = 'More effects'; advanced.appendChild(summary);
+  for (const id of ['zoom', 'spin', 'warp']) advanced.appendChild($('#' + id).closest('.ctl'));
+  visual.appendChild(advanced);
+  const reset = $('#neutral'); reset.textContent = 'Reset effects'; visual.appendChild(reset);
+  const auto = section('03 / Autopilot');
+  auto.appendChild($('#autopilot'));
+  for (const id of ['apEvery', 'apFade', 'apWild']) auto.appendChild($('#' + id).closest('.ctl'));
+  auto.appendChild($('#apBeat').closest('.ctl'));
+  const saved = document.createElement('p'); saved.className = 'hint'; saved.textContent = 'Your look and autopilot settings are saved in this browser.'; panel.appendChild(saved);
+  for (const id of ['rateUp', 'rateDown', 'fsRateUp', 'fsRateDown', 'sessionStart', 'showBtn']) $('#' + id).disabled = true;
+  hideTip();
+  $('#guideBtn').hidden = true;
+  // Do not accept files or teach profiles in this focused edition.
+  window.addEventListener('drop', (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
+  window.addEventListener('dragover', (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
+  const updateScene = () => { select.value = loops.A.tgt.in1; };
+  document.addEventListener('pointerdown', () => { if (snd.ctx?.state === 'suspended') snd.ctx.resume().catch(() => {}); });
+  updateScene();
+  panel.addEventListener('input', saveSession);
+  panel.addEventListener('change', saveSession);
+}
+
 /* ================= start ================= */
-applyPatch(STARTERS[reduceMotion ? Math.max(0, STARTERS.findIndex((c) => c.name === 'Calm')) : 0]);
+applyPatch({ A: { in1: 'mercury', trails: 0, size: 85 }, B: { in1: 'cavern', trails: 0, size: 85 } });
+setDrift(false);
 for (const key of ['A', 'B']) Object.assign(loops[key].cur, loops[key].tgt);
 Object.assign(mix.cur, mix.tgt);
 setEdit('A');
 // Autopilot's eye is made now, with everything else, so starting Autopilot never waits for it
 eyeSetup();
 requestAnimationFrame(frame);
+setupMinimalUI();
 showStart();
 // Available only in the isolated local capture session; ordinary site behavior is unchanged.
 if (window.__phosphorCaptureConfig) window.__phosphorCapture = {

@@ -1,9 +1,9 @@
 # Phosphor Loop: notes for Claude
 
-The site is `index.html` (plus `phone.html`, `qrcode.js`, `sw.js`, icons, `nature/`, `presets.json`), served by
-GitHub Pages from `main` at https://nhillson.github.io/phosphor-loop/. Pushing to `main` puts it live for everyone in
-about a minute and rebuilds the Android app (see `.github/workflows/android.yml`). Changes to `tests/` or this
-file don't rebuild the app.
+This fork is a browser-only 3D visualizer. Android packaging, phone pairing, QR-code integration,
+and the Android release workflow have been removed. See README.txt for the current scope.
+Run `npm run test:minimal` for the focused browser regression check. The older workout below
+references controls removed from this edition; use it only when working on the legacy engine.
 
 ## Testing: Nick's standing rules
 

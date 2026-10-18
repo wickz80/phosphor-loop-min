@@ -9,7 +9,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="stylesheet" href="styles/base.css">
-<title>Phosphor Loop</title>
+<title>phosphor-loop-min</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Michroma&family=VT323&display=swap">
@@ -21,12 +21,10 @@
   <header class="top">
     <div class="brand">
       <span class="guns" aria-hidden="true"><i></i><i></i><i></i></span>
-      <span class="wordmark">Phosphor Loop</span>
+      <span class="wordmark">phosphor-loop-min</span>
     </div>
     <div class="top-right">
-      <div class="readout" aria-hidden="true">
-        <span class="tc-label">TC</span><span id="tc">00:00:00:00</span><span class="lines">· 576 lines</span>
-      </div>
+        <p class="project-credit">Based on <a href="https://nhillson.github.io/phosphor-loop" target="_blank" rel="noopener noreferrer">nhillson/phosphor-loop</a></p>
       <button class="btn guide-btn" id="guideBtn" aria-haspopup="dialog" aria-controls="guide"><span class="q" aria-hidden="true">?</span>Guide</button>
     </div>
   </header>
@@ -37,6 +35,23 @@
         <div class="bezel" id="bezel">
           <div class="screen" id="screenWrap">
             <canvas id="screen" width="768" height="576" aria-label="Video feedback screen. Drag on it to draw light."></canvas>
+            <div class="transport bottom-bar">
+              <span class="current-texture" id="currentTexture" aria-label="Current texture">Mercury</span>
+              <div class="playback-buttons">
+              <button class="btn" id="freeze" aria-keyshortcuts="Space" aria-pressed="false"><span class="led"></span>Freeze (Space)</button>
+              <button class="btn" id="clear">Clear</button>
+              <button class="btn" id="drift" aria-pressed="true" title="Slowly moves the settings by themselves"><span class="led"></span>Auto-drift</button>
+              <button class="btn" id="autopilotBar" aria-keyshortcuts="P" aria-pressed="false" title="Changes the settings slowly by itself (key P)"><span class="led"></span>Autopilot (P)</button>
+              <button class="btn next-look" id="nextLookBar" aria-keyshortcuts="L" title="Autopilot’s next new look, right now (key L). Starts Autopilot if it’s off."><svg class="skip" viewBox="0 0 16 12" aria-hidden="true"><path d="M1 1.2 7 6l-6 4.8zM7.4 1.2 13.4 6l-6 4.8z" fill="currentColor"/><rect x="13.6" y="1.2" width="1.7" height="9.6" rx=".5" fill="currentColor"/></svg>Next look (L)</button>
+              <button class="btn" id="full" aria-keyshortcuts="F">Full screen (F)</button>
+              <button class="btn" id="outBtn" aria-pressed="false" title="Open the picture in its own window for a projector or second screen">Output window</button>
+              <span class="spacer" aria-hidden="true"></span>
+              <button class="btn" id="snap" hidden>Save picture</button>
+              <button class="btn" id="recMic" aria-pressed="true" hidden title="Which sound goes into videos you record. Click to change it: Off, Mic, Computer or Both."><span class="led"></span><span id="recSoundLabel">Video sound: Both</span></button>
+              <button class="btn rec" id="rec" aria-pressed="false" hidden title="Record a video; press again to stop and save it (key V, works in full screen too)"><span class="led"></span><span id="recLabel">Record</span></button>
+              </div>
+              <span class="render-stats"><span id="tc" title="Runtime (hours:minutes:seconds:frames)">00:00:00:00</span><span id="renderSize" title="Internal render resolution in physical pixels">sizing…</span><span id="renderFps" title="Rendered frames per second, averaged over the last sample">— FPS</span></span>
+            </div>
             <div class="osd" id="osd" aria-hidden="true"><span class="osd-a"></span><span class="osd-b"></span></div>
             <div class="rec-ind" id="recInd" hidden><span class="dot">●</span> REC <span id="recTime">0:00</span></div>
             <div class="tip" id="fsNote" hidden></div>
@@ -72,19 +87,6 @@
         <button class="btn rate rate-down" id="rateDown" title="Not this (key X): skips to the next look, and Autopilot learns to steer away from looks like it" aria-label="Not this"><svg class="thumb" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.2 7.2h2.6v7.3H1.2z" fill="currentColor"/><path d="M5 14.5V7.4l2.9-5c.3-.6 1-.8 1.6-.5.7.3 1 1 .8 1.7l-.7 2.7h3.6c.9 0 1.6.9 1.4 1.8l-1.2 5.3c-.2.7-.8 1.1-1.4 1.1z" fill="currentColor"/></svg></button>
         <span class="look-clock off" id="lookClock" title="How long until Autopilot’s next new look"><span class="ring" aria-hidden="true"></span><span id="lookClockText"><span class="lc-l">Autopilot off</span><span class="lc-s">Off</span></span></span>
       </div>
-      <div class="transport">
-        <button class="btn" id="freeze" aria-pressed="false"><span class="led"></span>Freeze</button>
-        <button class="btn" id="clear">Clear</button>
-        <button class="btn" id="drift" aria-pressed="true" title="Slowly moves the settings by themselves"><span class="led"></span>Auto-drift</button>
-        <button class="btn" id="autopilotBar" aria-pressed="false" title="Changes the settings slowly by itself (key P)"><span class="led"></span>Autopilot</button>
-        <button class="btn next-look" id="nextLookBar" title="Autopilot’s next new look, right now (key L). Starts Autopilot if it’s off."><svg class="skip" viewBox="0 0 16 12" aria-hidden="true"><path d="M1 1.2 7 6l-6 4.8zM7.4 1.2 13.4 6l-6 4.8z" fill="currentColor"/><rect x="13.6" y="1.2" width="1.7" height="9.6" rx=".5" fill="currentColor"/></svg>Next look</button>
-        <button class="btn" id="full">Full screen</button>
-        <button class="btn" id="outBtn" aria-pressed="false" title="Open the picture in its own window for a projector or second screen">Output window</button>
-        <span class="spacer" aria-hidden="true"></span>
-        <button class="btn" id="snap" hidden>Save picture</button>
-        <button class="btn" id="recMic" aria-pressed="true" hidden title="Which sound goes into videos you record. Click to change it: Off, Mic, Computer or Both."><span class="led"></span><span id="recSoundLabel">Video sound: Both</span></button>
-        <button class="btn rec" id="rec" aria-pressed="false" hidden title="Record a video; press again to stop and save it (key V, works in full screen too)"><span class="led"></span><span id="recLabel">Record</span></button>
-      </div>
       <div class="session-bar" id="sessionBar" hidden>
         <div class="session-row">
           <span class="live" aria-hidden="true"></span><span id="sessionText"><b>Taste session</b> · nothing rated yet</span>
@@ -98,7 +100,6 @@
         </form>
       </div>
       <div class="foot">
-        <p class="keys">Keys: <kbd>Space</kbd> freeze · <kbd>N</kbd> neutral · <kbd>R</kbd> surprise · <kbd>P</kbd> autopilot · <kbd>L</kbd> next look · <kbd>Y</kbd> more like this · <kbd>X</kbd> not this · <kbd>C</kbd> clear · <kbd>F</kbd> full screen · <kbd>V</kbd> record · <kbd>G</kbd> guide</p>
         <p class="toast" id="toast" role="status" aria-live="polite"></p>
       </div>
     </section>
@@ -354,7 +355,6 @@
             <button data-src="video" aria-pressed="false">Video</button>
             <button data-src="camera" aria-pressed="false" data-device>Camera</button>
             <button data-src="screen" aria-pressed="false" data-device>Screen</button>
-            <button data-src="phone" aria-pressed="false" data-device>Phone</button>
             <button data-src="loop" aria-pressed="false" id="loopSrcBtn">Loop B’s picture</button>
           </div>
 
@@ -479,22 +479,6 @@
               <button class="btn small" id="scrStop" hidden>Stop sharing</button>
             </div>
             <span class="hint">Sharing this tab points the screen back at itself, like a camera aimed at a TV.</span>
-          </div>
-
-          <div class="dev" id="row-phone" hidden>
-            <div class="qr-wrap" id="qrWrap" hidden>
-              <canvas id="qr" width="128" height="128" aria-label="QR code for connecting your phone"></canvas>
-              <div class="qr-text">
-                <b>Scan with your phone’s camera</b>
-                <span class="hint">Phone and computer both need internet. The code changes each time this page opens.</span>
-                <span class="qr-url" id="qrUrl"></span>
-              </div>
-            </div>
-            <span class="dev-status" id="phoStatus">Getting a connection code…</span>
-            <div class="dev-actions">
-              <button class="btn small" id="phoRetry" hidden>Try again</button>
-              <button class="btn small" id="phoOff" hidden>Disconnect phone</button>
-            </div>
           </div>
 
           <div class="ctl">

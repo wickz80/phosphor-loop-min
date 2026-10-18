@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:minimal": "node tests/minimal.mjs",
     "capture": "node tools/capture/run.mjs",
     "stream": "node tools/capture/run.mjs --live --headed",
     "stream:push": "node tools/capture/relay.mjs",
