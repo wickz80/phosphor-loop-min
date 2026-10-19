@@ -1,8 +1,8 @@
 // Phosphor Loop keeps a copy of itself in the browser, so after one visit it opens without internet.
 // Online, every file is fetched fresh and the copy updated; offline, or on a very slow network, the copy is used.
-const CACHE = 'pl-min-v1';
+const CACHE = 'pl-min-surface-recovery-1';
 const NATURE = 'pl-nature';   // nature pictures seen so far, or all of them via Show setup; kept when the app updates
-const APP = ['./', 'index.html', 'icon-180.png', 'icon-192.png', 'nature/pictures.json', 'styles/base.css', 'styles/app.css', 'js/fractal-math.js', 'js/shaders.js', 'js/helpers.js', 'js/recording-formats.js', 'js/output-template.js', 'js/ribbit.js', 'js/app.js'];
+const APP = ['./', 'index.html', 'icon-180.png', 'icon-192.png', 'nature/pictures.json', 'styles/base.css', 'styles/app.css', 'js/fractal-math.js', 'js/shaders.js', 'js/helpers.js', 'js/recording-formats.js', 'js/output-template.js', 'js/ribbit.js', 'js/audio/mappings.js', 'js/audio/beat-clock.js', 'js/audio/rhythm.js', 'js/audio/rhythm-worklet.js', 'js/audio/tempo-worker.js', 'vendor/essentia/essentia-wasm.es.js', 'vendor/essentia/essentia.js-core.es.js', 'js/app.js'];
 const FONT_CSS = 'https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Michroma&family=VT323&display=swap';
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 const SLOW_MS = 4000;
@@ -76,7 +76,7 @@ async function cacheFirst(req) {
 function networkFirst(event, req, url) {
   const key = new URL(url.pathname, url.origin).href;   // ?show=1 and the like share one copy
   const cacheP = caches.open(CACHE);
-  const network = fetch(req);
+  const network = fetch(req, { cache: 'no-cache' });
   // Refresh the saved copy whenever the network answers, even if the saved one was served first
   event.waitUntil(network.then((res) => {
     if (!res.ok || res.type !== 'basic') return null;

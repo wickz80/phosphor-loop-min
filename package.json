@@ -18,9 +18,16 @@
     "audio:activate": "swift -module-cache-path /tmp/phosphor-swift-cache tools/audio-route.swift activate",
     "audio:repair": "swift -module-cache-path /tmp/phosphor-swift-cache tools/audio-route.swift repair",
     "audio:setup": "swift -module-cache-path /tmp/phosphor-swift-cache tools/audio-route.swift setup",
-    "audio:restore": "swift -module-cache-path /tmp/phosphor-swift-cache tools/audio-route.swift restore"
+    "audio:restore": "swift -module-cache-path /tmp/phosphor-swift-cache tools/audio-route.swift restore",
+    "test:rhythm": "node tests/rhythm.mjs",
+    "test:mappings": "node tests/music-mappings.mjs",
+    "test:music-response": "node tests/music-response.mjs",
+    "test:camera": "node tests/camera-motion.mjs",
+    "test:surface-camera": "node tests/surface-camera.mjs",
+    "test:scene-recovery": "node tests/reference-recovery.mjs"
   },
   "dependencies": {
+    "essentia.js": "0.1.3",
     "hls.js": "^1.7.3",
     "mp4-muxer": "^5.2.2",
     "playwright-core": "^1.60.0"

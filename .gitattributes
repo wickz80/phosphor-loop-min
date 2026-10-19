@@ -1,0 +1,2 @@
+# Keep upstream Essentia distribution assets byte-for-byte, including their formatting.
+vendor/essentia/*.js -whitespace

@@ -1,7 +1,7 @@
 (() => {
 'use strict';
-const { FR, makeDrone } = window.PhosphorFractals;
-const { VS, FS_COPY, FS_PROBE, FS_EYE, COMMON, FS_FEEDBACK, FS_COMPOSITE, FS_TIMEWARP, FS_DISPLAY, FS_CUBES, FS_HORIZON, FS_CAVERN, FS_BLACKHOLE, FS_AURORA, FS_MERCURY, FS_FRACTAL, FS_NEBULA, FS_CITY, FS_SPONGE, FS_BULB, FS_MANDELBOX, FS_SIERPINSKI, FS_JULIA, FS_KALEIDO } = window.PhosphorShaders;
+const { FR, makeDrone, makeSurfaceCamera } = window.PhosphorFractals;
+const { FS_CAMERA_SPHERE, FS_CAMERA_CUBE, MUSIC_MATERIAL, VS, FS_COPY, FS_PROBE, FS_EYE, COMMON, FS_FEEDBACK, FS_COMPOSITE, FS_TIMEWARP, FS_DISPLAY, FS_CUBES, FS_HORIZON, FS_CAVERN, FS_BLACKHOLE, FS_AURORA, FS_MERCURY, FS_FRACTAL, FS_NEBULA, FS_CITY, FS_SPONGE, FS_BULB, FS_MANDELBOX, FS_SIERPINSKI, FS_JULIA, FS_KALEIDO } = window.PhosphorShaders;
 const { clamp, rnd, pick, hsv, foldJS, stamp, randId, loadScript } = window.PhosphorHelpers;
 const { addWebmDuration, standardMp4 } = window.PhosphorRecording;
 
@@ -26,9 +26,9 @@ if (swOK) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 const SRC_ID = { wave: 0, shape: 1, bars: 2, sparks: 3, picture: 4, video: 5, camera: 6, screen: 7, phone: 8, none: 9, loop: 10, ink: 11, cubes: 13, horizon: 14, cavern: 15,
                  blackhole: 16, aurora: 17, mercury: 18, fractal: 19, nebula: 21, spectro: 22, city: 23, text: 24,
-                 sponge: 25, mandelbulb: 26, mandelbox: 27, sierpinski: 28, julia3d: 29, kaleido: 30, ribbit: 31 };
+                 sponge: 25, mandelbulb: 26, mandelbox: 27, sierpinski: 28, julia3d: 29, kaleido: 30, ribbit: 31, cameraSphere: 32, cameraCube: 33 };
 const SRC_LABEL = { wave: 'Wave', shape: 'Shape', bars: 'Bars', sparks: 'Sparks', ink: 'Ink', text: 'Text', cubes: 'Cubes', horizon: 'Horizon', cavern: 'Cavern', spectro: 'Spectrograph', city: 'City',
-                    blackhole: 'Black hole', aurora: 'Aurora', mercury: 'Mercury', fractal: 'Fractal', nebula: 'Nebula', ribbit: 'Mount Ribbit',
+                    blackhole: 'Black hole', aurora: 'Aurora', mercury: 'Mercury', fractal: 'Fractal', nebula: 'Nebula', ribbit: 'Mount Ribbit', cameraSphere: 'Camera sphere', cameraCube: 'Camera cube',
                     sponge: 'Menger sponge', mandelbulb: 'Mandelbulb', mandelbox: 'Mandelbox', sierpinski: 'Sierpinski', julia3d: 'Julia', kaleido: 'Kaleidoscope', picture: 'Picture', video: 'Video', camera: 'Camera', screen: 'Screen', phone: 'Phone', none: 'Nothing', loop: 'Other loop' };
 const LIVE = ['video', 'camera', 'screen', 'phone', 'loop'];   // inputs that can use Only movement
 const DEVICE = ['camera', 'screen', 'phone'];
@@ -165,6 +165,8 @@ try {
 // The 3D worlds: what the picker calls each, how fast it moves (in its own units a second: along the
 // flight, or round the circle for Black hole and Mercury), after how far it repeats exactly, where loop B
 // starts in it, and for soft ones, how finely it is drawn (smaller is quicker, smoothed back up to size).
+const cameraReferencesReady = typeof makeSurfaceCamera === 'function' && typeof FR.sphere === 'function' && typeof FR.cube === 'function'
+  && typeof FS_CAMERA_SPHERE === 'string' && typeof FS_CAMERA_CUBE === 'string';
 const SCENES = {
   cubes:     { fs: FS_CUBES,     label: 'Cubes',      speed: 0.9,   period: 2048,          offB: 1000 },
   horizon:   { fs: FS_HORIZON,   label: 'Horizon',    speed: 6.5,   period: 512,           offB: 256 },
@@ -180,6 +182,10 @@ const SCENES = {
   ribbit:    { ext: window.PhosphorRibbit || null, label: 'Mount Ribbit', speed: 1, period: 1e9, offB: 0, kick: 0.5 },
   // The fractal flights (under their own Fractals button): no set path, a wandering camera for each loop
   // instead (see makeDrone). Their speed is the camera's pace; how close it may dive (near) suits each one's detail.
+  ...(cameraReferencesReady ? {
+  cameraSphere: { fs: FS_CAMERA_SPHERE, label: 'Camera sphere', group: 'fractal', test: true, speed: 1, period: 1e9, offB: 0, fly: { de: FR.sphere, near: 0.02, surface: true } },
+  cameraCube: { fs: FS_CAMERA_CUBE, label: 'Camera cube', group: 'fractal', test: true, speed: 1, period: 1e9, offB: 0, fly: { de: FR.cube, near: 0.02, surface: true } },
+  } : {}),
   sponge:     { fs: FS_SPONGE,     label: 'Menger sponge', group: 'fractal', speed: 1, period: 1e9, offB: 0, fly: { de: FR.sponge, lure: FR.spongeLure, near: 0.0025 } },
   mandelbulb: { fs: FS_BULB,       label: 'Mandelbulb',    group: 'fractal', speed: 1, period: 1e9, offB: 0, fly: { de: FR.bulb, near: 0.004 } },
   mandelbox:  { fs: FS_MANDELBOX,  label: 'Mandelbox',     group: 'fractal', speed: 1, period: 1e9, offB: 0, fly: { de: FR.box, near: 0.003 } },
@@ -197,7 +203,7 @@ function droneOf(sc, k) {
   if (!f.drone) f.drone = {};
   let dr = f.drone[k];
   if (!dr || simT - dr.used > 3) {
-    dr = f.drone[k] = makeDrone(f.de, k === 'B' ? 2 : 1, { start: 3.2, roam: 2.2, size: 1.2, far: 0.45, near: f.near, dive: 70, speed: 0.55,
+    dr = f.drone[k] = f.surface ? makeSurfaceCamera(f.de, k === 'B' ? 2 : 1, {style: currentCameraStyle()}) : makeDrone(f.de, k === 'B' ? 2 : 1, { start: 3.2, roam: 2.2, size: 1.2, far: 0.45, near: f.near, dive: 70, speed: 0.55,
                                                            phase0: k === 'B' ? 0.35 : 0, lure: f.lure });
   }
   dr.used = simT;
@@ -233,7 +239,10 @@ function buildScene(sc) {
   let pr;
   try {
     pr = gl.createProgram();
-    for (const [type, src] of [[gl.VERTEX_SHADER, VS], [gl.FRAGMENT_SHADER, sc.fs]]) {
+    const fragment = sc.fly ? sc.fs : sc.fs
+      .replace('precision highp float;', 'precision highp float;\n' + MUSIC_MATERIAL)
+      .replace('void main()', 'void musicScene()') + '\nvoid main() { musicScene(); o.rgb = musicTint(o.rgb); }';
+    for (const [type, src] of [[gl.VERTEX_SHADER, VS], [gl.FRAGMENT_SHADER, fragment]]) {
       const sh = gl.createShader(type);
       shaders.push(sh);
       gl.shaderSource(sh, src);
@@ -276,7 +285,7 @@ const worldOK = (name) => !!SCENES[name] && SCENES[name].state !== 'failed';
 const worldsOK = () => Object.keys(SCENES).filter(worldOK);
 // For Surprise and Autopilot: every 3D world and every fractal this graphics card can draw, each one its own
 // input with the same chance of coming up as Wave, Shape or any other
-const allScenes = () => worldsOK();
+const allScenes = () => worldsOK().filter(name => !SCENES[name].test);
 
 const U = (prog, name) => prog.u[name] || null;
 function set1f(prog, name, v) { const l = U(prog, name); if (l) gl.uniform1f(l, v); }
@@ -839,6 +848,7 @@ function syncVisibility() {
 }
 
 function syncUI() {
+  syncMappingUI();
   const t = loops[edit].tgt;
   if ($('#sceneSelect')) $('#sceneSelect').value = loops.A.tgt.in1;
   LOOP_SLIDERS.forEach((k) => { sliderEls[k].value = Math.round(t[k]); showSlider(k); });
@@ -967,14 +977,31 @@ $('#surprise').addEventListener('click', surprise);
 // and nudges both loops with them. Nothing is played back, so there is no echo.
 const snd = {
   src: 'off', ctx: null, analyser: null, source: null, stream: null, track: null, bins: null, prevBins: null,
-  rate: 48000, tap: null, appFeed: null,
+  rate: 48000, tap: null, appFeed: null, rhythm: null, rhythmSample: null, analysisError: null,
   env: { low: 0, mid: 0, high: 0, beat: 0 },
   avg: { low: 0, mid: 0, high: 0 }, peak: { low: 0.1, mid: 0.1, high: 0.1 },
   flux: 0, lastBeat: 0, beats: 0, shakeDir: [1, 0], amount: 60,
+  routes: window.PhosphorMappings.defaults(), cameraStyle: 'glide',
   map: { kick: true, size: true, spin: true, color: true, warp: true, flash: true },
 };
-// How hard the picture reacts. The old full strength now sits near 50, and Wild goes well past it.
-const sndPower = () => Math.pow(clamp(snd.amount, 0, 100) / 100, 0.85) * 2.4;
+// Bounded response: each musical channel has a separate visual role.
+let musicFX = {forward: 0, shimmer: 0, spin: 0, warp: 0, color: 0, hue: 0};
+const CAMERA_STYLES = {glide: 'Glide', runner: 'Runner', crawler: 'Crawler', mix: 'Mix it up'};
+let mappingHue = 0;
+function currentCameraStyle() {
+  if (snd.cameraStyle !== 'mix') return snd.cameraStyle;
+  const count = snd.rhythmSample?.gridBeat ?? Math.floor(simT * 2);
+  return ['glide', 'runner', 'crawler'][((Math.floor(count / 16) % 3) + 3) % 3];
+}
+function updateMusicMappings(dt) {
+  const target = snd.analyser
+    ? window.PhosphorMappings.evaluate(snd.routes, snd.env, snd.rhythmSample)
+    : {forward: 0, shimmer: 0, spin: 0, warp: 0, color: 0, hue: mappingHue};
+  const delta = ((target.hue - mappingHue + 1.5) % 1) - 0.5;
+  if (target.color > 0) mappingHue = (mappingHue + delta * (1 - Math.exp(-dt / 0.35)) + 1) % 1;
+  musicFX = {...target, hue: mappingHue};
+}
+const sndPower = () => Math.pow(clamp(snd.amount, 0, 100) / 100, 0.85) * 1.2;
 const sndStatus = $('#sndStatus'), sndRetry = $('#sndRetry'), sndAmt = $('#sndAmt'), micSel = $('#micSel');
 let micDeviceId = '', loopbackDeviceId = '', soundRequest = 0;
 // Firefox and Safari share screens without sound, so Computer sound only works in Chrome and Edge
@@ -1010,6 +1037,7 @@ function syncSoundUI() {
   $('#micPick').hidden = snd.src === 'loopback' ? micSel.options.length === 0 : snd.src !== 'mic' || micSel.options.length < 2;
   $('#loopbackHint').hidden = snd.src !== 'loopback';
   $$('#sndMap button').forEach((b) => b.setAttribute('aria-pressed', String(!!snd.map[b.dataset.map])));
+  syncMappingUI();
   sndAmt.value = snd.amount;
   fillTrack(sndAmt);
   $('#sndAmtOut').textContent = snd.amount === 0 ? 'OFF' : String(snd.amount);
@@ -1094,6 +1122,19 @@ function useEngine(track) {
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   Object.assign(snd, { ctx, source });
   setAnalyser(analyser, ctx.sampleRate);
+  if (location.protocol === 'file:') {
+    snd.analysisError = 'BPM and pitch analysis need the local preview. Open localhost:8000.';
+  } else if (ctx.audioWorklet && window.PhosphorRhythm) {
+    const rhythm = new window.PhosphorRhythm(ctx, source);
+    snd.rhythm = rhythm;
+    rhythm.start().catch(() => {
+      rhythm.stop();
+      if (snd.rhythm === rhythm) {
+        snd.rhythm = null;
+        snd.analysisError = 'Rhythm analysis could not start. Reload the local preview and reconnect audio.';
+      }
+    });
+  } else snd.analysisError = 'This browser cannot run BPM and pitch analysis. Try Chrome or Edge.';
 }
 // Reads the raw sound as it arrives. If that fails, or nothing turns up within two seconds, it goes back to the audio engine.
 function useTap(track) {
@@ -1128,6 +1169,9 @@ function useTap(track) {
   return true;
 }
 function stopSound() {
+  snd.rhythm?.stop(); snd.rhythm = null; snd.rhythmSample = null; snd.analysisError = null;
+  $('#rhythmStatus').textContent = 'Listening';
+  const pitchStatus = $('#pitchStatus'); if (pitchStatus) pitchStatus.textContent = 'Pitch color: listening for a clear note';
   dropTap();
   if (snd.stream) snd.stream.getTracks().forEach((t) => t.stop());
   if (snd.source) { try { snd.source.disconnect(); } catch (_) {} }
@@ -1140,7 +1184,7 @@ function listen(stream, appRate) {
   const track = stream.getAudioTracks()[0];
   Object.assign(snd, { stream, track });
   if (appRate) { snd.appFeed = makeFastAnalyser(appRate); setAnalyser(snd.appFeed, appRate); }
-  else if (!(canTap && useTap(track))) useEngine(track);
+  else useEngine(track);
   snd.avg = { low: 0, mid: 0, high: 0 };
   snd.peak = { low: 0.1, mid: 0.1, high: 0.1 };
   snd.flux = 0;
@@ -1292,6 +1336,28 @@ function analyzeSound(dt, now) {
   if (!snd.analyser) return;
   const bins = snd.bins, prev = snd.prevBins;
   snd.analyser.getByteFrequencyData(bins);
+  const music = snd.rhythm?.read();
+  snd.rhythmSample = music;
+  if (music) {
+    const smooth = (key, value, release) => {
+      snd.env[key] += (value - snd.env[key]) * (1 - Math.exp(-dt / (value > snd.env[key] ? 0.025 : release)));
+    };
+    smooth('low', music.bass, 0.22);
+    smooth('mid', music.percussion, 0.12);
+    smooth('high', music.highs, 0.09);
+    snd.env.beat = music.beat;
+    if (music.kicks !== snd.beats) {
+      const angle = Math.random() * Math.PI * 2;
+      snd.shakeDir = [Math.cos(angle), Math.sin(angle)];
+    }
+    snd.beats = music.kicks;
+    return;
+  }
+  // Once the worklet is running, stale audio fades rather than inventing frame-based hits.
+  if (snd.rhythm?.features) {
+    for (const key in snd.env) snd.env[key] *= Math.exp(-dt * 10);
+    return;
+  }
   const hz = snd.rate / snd.analyser.fftSize;
   const span = (lo, hi) => [Math.max(1, Math.floor(lo / hz)), Math.min(bins.length - 1, Math.ceil(hi / hz))];
   // Squaring widens the gap between a hit and the sound around it
@@ -1336,7 +1402,17 @@ function drawMeter() {
   mLow.style.transform = `scaleY(${snd.env.low.toFixed(3)})`;
   mMid.style.transform = `scaleY(${snd.env.mid.toFixed(3)})`;
   mHigh.style.transform = `scaleY(${snd.env.high.toFixed(3)})`;
-  mBeat.classList.toggle('on', snd.env.beat > 0.45);
+  const music = snd.rhythmSample;
+  mBeat.classList.toggle('on', (music?.bpmBeat || 0) > 0.45);
+  $('#rhythmStatus').textContent = music
+    ? `${music.bpm ? Math.round(music.bpm) + ' BPM · ' : ''}${music.state}`
+    : snd.analysisError || (snd.rhythm ? 'Starting rhythm analysis…' : 'Basic audio response');
+  $('#rhythmPhase').value = music?.bpm ? music.phase : 0;
+  const pitch = music?.pitch;
+  const notes = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+  $('#pitchStatus').textContent = pitch
+    ? `Pitch color: ${notes[((pitch.midi % 12) + 12) % 12]} · ${music.time - pitch.time > 1 ? 'holding' : 'tracking'}`
+    : 'Pitch color: listening for a clear note';
 }
 
 /* ================= spectrograph ================= */
@@ -2469,9 +2545,10 @@ function rampLook(k) {
 // unless Next look or the white-out watch asked for it straight away.
 function apTick(now) {
   if (apSet.beat && snd.analyser && snd.amount > 0 && !ap.rush) {
-    if (!ap.beatWait) ap.beatWait = { beats: snd.beats, until: now + 4000 };
-    if (snd.beats === ap.beatWait.beats && now < ap.beatWait.until) return;
-    const onBeat = snd.beats !== ap.beatWait.beats;
+    const beats = snd.rhythmSample?.gridBeat ?? null;
+    if (!ap.beatWait) ap.beatWait = { beats, until: now + 4000 };
+    const onBeat = beats !== null && ap.beatWait.beats !== null && beats !== ap.beatWait.beats;
+    if (!onBeat && now < ap.beatWait.until) { ap.beatWait.beats = beats; return; }
     ap.beatWait = null;
     apStep(now, onBeat);
   } else {
@@ -4624,7 +4701,7 @@ function snapshot() {
     A: clone(loops.A.tgt), B: clone(loops.B.tgt),
     mix: { view: mix.tgt.view, xab: mix.tgt.xab, xba: mix.tgt.xba },
     adj: clone(adj),
-    snd: { amount: snd.amount, map: clone(snd.map) },
+    snd: { amount: snd.amount, map: clone(snd.map), mappingVersion: 2, cameraStyle: snd.cameraStyle, routes: clone(snd.routes) },
     drift,
     text: { str: txt.str, style: txt.style },
   };
@@ -4719,7 +4796,18 @@ function loadPreset(pr, quiet) {
   mix.base = { ...mix.tgt };
   ADJ_SRC.forEach((src) => { adj[src] = { ...adjDefaults(), ...((d.adj && d.adj[src]) || {}) }; });
   syncAdjUI();
-  if (d.snd) { if (d.snd.amount != null) snd.amount = d.snd.amount; if (d.snd.map) Object.assign(snd.map, d.snd.map); syncSoundUI(); }
+  if (d.snd) {
+    if (d.snd.amount != null) snd.amount = d.snd.amount;
+    if (d.snd.map) Object.assign(snd.map, d.snd.map);
+    if (Object.hasOwn(CAMERA_STYLES, d.snd.cameraStyle)) snd.cameraStyle = d.snd.cameraStyle;
+    if (d.snd.routes) {
+      snd.routes = window.PhosphorMappings.sanitize(d.snd.routes);
+      if (d.snd.mappingVersion !== 2) {
+        snd.routes = snd.routes.map(row => row.source === 'kick' ? {...row, source: 'bpm'} : row);
+      }
+    }
+    syncSoundUI();
+  }
   if (typeof d.drift === 'boolean') setDrift(d.drift);
   // Start any camera, screen or phone the preset uses, right here inside the click
   const used = [loops.A.tgt.in1, loops.A.tgt.in2, loops.B.tgt.in1, loops.B.tgt.in2];
@@ -5687,7 +5775,7 @@ function restoreSession() {
     if (!L) continue;
     for (const slot of ['in1', 'in2']) {
       if (is3D(L[slot]) && L[slot] !== 'ribbit' || slot === 'in2' && L[slot] === 'none') continue;
-      missing = L[slot] === 'screen' ? 'Screen' : 'Video';
+      if (!['cameraSphere', 'cameraCube'].includes(L[slot])) missing = L[slot] === 'screen' ? 'Screen' : 'Video';
       L[slot] = slot === 'in2' ? 'none' : (k === 'A' ? 'mercury' : 'cavern');
     }
   }
@@ -5771,7 +5859,7 @@ function offlineStatus() {
   if (APP) { offlineNote.textContent = 'The app keeps a copy on this phone, so it opens without internet. Only the phone link needs it.'; return; }
   if (!swOK) {
     offlineNote.textContent = location.protocol === 'file:'
-      ? 'Opened from a file on this computer, so it already works without internet (except the phone link).'
+      ? 'Visuals work from this file. Use the localhost preview for BPM and pitch analysis.'
       : '';
     return;
   }
@@ -6127,6 +6215,10 @@ const currentTexture = $('#currentTexture'), fpsReadout = $('#renderFps');
 let fpsStart = null, fpsFrames = 0;
 document.addEventListener('visibilitychange', () => { fpsStart = null; fpsFrames = 0; });
 function updateRenderStats(now) {
+  const music = snd.rhythmSample;
+  $('#renderBpm').textContent = !snd.analyser ? '— BPM' : music?.bpm ? `${Math.round(music.bpm)} BPM`
+    : snd.analysisError || music?.state === 'Tempo unavailable' ? 'BPM unavailable' : 'Finding BPM';
+  $('#renderBpm').title = snd.analysisError || music?.state || (snd.analyser ? 'Finding tempo' : 'Share audio to track tempo');
   if (fpsStart === null) fpsStart = now;
   else fpsFrames++;
   if (now - fpsStart >= 500) {
@@ -6347,10 +6439,33 @@ function computeInk(t, scale, flowPerSec) {
 // its second input's into the other. How brightly they glow follows the music; see frame().
 const sceneRT = [null, null];
 let sceneGlow = 1;
+function recoverScene(name) {
+  const sc = SCENES[name];
+  if (!sc) return;
+  sc.state = 'failed';
+  const fallback = ['mercury', 'cavern', ...allScenes()].find(candidate => candidate !== name && worldOK(candidate));
+  if (!fallback) return;
+  let changed = false;
+  for (const loop of Object.values(loops)) for (const data of [loop.tgt, loop.cur, loop.base]) {
+    if (!data) continue;
+    if (data.in1 === name) { data.in1 = fallback; changed = true; }
+    if (data.in2 === name) { data.in2 = 'none'; changed = true; }
+  }
+  const option = $('#sceneSelect')?.querySelector(`option[value="${name}"]`);
+  if (option) option.disabled = true;
+  if (changed) {
+    syncUI(); saveSession();
+    toast(`${sc.label} could not start. Switched to ${SRC_LABEL[fallback]}. Reload the page to update its components.`);
+  }
+}
 function draw3D(k, name, slot, scale) {
+  try { return render3D(k, name, slot, scale); }
+  catch (_) { recoverScene(name); return null; }
+}
+function render3D(k, name, slot, scale) {
   const sc = SCENES[name];
   if (sc.ext) return drawExt(k, sc, scale);
-  if (!sceneReady(sc, true)) return null;
+  if (!sceneReady(sc, true)) { if (sc.state === 'failed') recoverScene(name); return null; }
   const w = Math.max(2, Math.round(simW * (sc.res || 1))), h = Math.max(2, Math.round(simH * (sc.res || 1)));
   let rt = sceneRT[slot];
   if (!rt || rt.w !== w || rt.h !== h) {
@@ -6368,6 +6483,7 @@ function draw3D(k, name, slot, scale) {
   // Input size is the lens: at 100 it sees about as much as your eye, lower sees wider
   set1f(sc.prog, 'uLens', 0.47 * Math.pow(2.5 / scale, 0.6));
   set1f(sc.prog, 'uGlow', sceneGlow);
+  set2f(sc.prog, 'uMusicColor', musicFX.hue, sndPower() * musicFX.color);
   set1f(sc.prog, 'uSeed', k === 'B' ? 37 : 0);
   if (sc.fly) {
     // The fractals: where this loop's wandering camera is, which way it looks and how it is rolled
@@ -6609,16 +6725,7 @@ function runLoop(k, xf, brush, f) {
       if (!pinned('warp', k)) w = limFold('warp', w);
     }
   }
-  let sizeBoost = 0, gainBoost = 1;
-  if (snd.analyser) {
-    const a = sndPower(), E = snd.env, m = snd.map;
-    if (m.kick) z += a * (E.low * 45 + E.beat * 45);
-    if (m.spin) s += a * E.mid * 60 * (s < 0 ? -1 : 1);
-    if (m.color) col += a * (E.high * 60 + E.beat * 15);
-    if (m.warp) w += a * (E.beat * 50 + E.mid * 15);
-    if (m.size) sizeBoost = a * (E.low * 30 + E.beat * 22);
-    if (m.flash) gainBoost = 1 + a * E.beat * 0.8;
-  }
+  // Mapped rotation/deformation act on the source below, so they also work with no trails.
   const br = clamp(c.breathe, 0, 100) / 100;
   if (br > 0.005) { const B = breathe(k, br, f / 60); z += B.z; s *= B.s; }
   else { L.breath.z *= 0.95; L.breath.s += (1 - L.breath.s) * 0.05; }
@@ -6628,8 +6735,7 @@ function runLoop(k, xf, brush, f) {
   const ramp = tr >= 0.1 ? 1 : (tr / 0.1) * (tr / 0.1) * (3 - 2 * tr / 0.1);
   const decay60 = (1 - (0.2 - 0.194 * Math.pow(tr, 0.7))) * ramp;
 
-  // The music can swell the input past the slider's top, so it still pulses when Size is already at 100
-  const scale = Math.pow(2.5, (Math.min(clamp(c.size, 0, 100) + sizeBoost, 140) / 100 - 0.5) * 2);
+  const scale = Math.pow(2.5, (clamp(c.size, 0, 100) / 100 - 0.5) * 2);
   const fly1 = is3D(t.in1) ? t.in1 : null;
   const fly2 = t.in2 !== t.in1 && is3D(t.in2) ? t.in2 : null;
   const flyTex1 = fly1 ? draw3D(k, fly1, 0, scale) : null;
@@ -6653,6 +6759,8 @@ function runLoop(k, xf, brush, f) {
   set1f(fbProg, 'uTime', simT + (k === 'B' ? 11.0 : 0));
   set1f(fbProg, 'uZoom', (z / 100) * 0.03 * f);
   set1f(fbProg, 'uSpin', -(s / 100) * 0.045 * f);
+  set1f(fbProg, 'uMusicSpin', sndPower() * musicFX.spin * 0.4 * (reduceMotion ? 0.4 : 1));
+  set1f(fbProg, 'uMusicWarp', sndPower() * musicFX.warp * 0.16 * (reduceMotion ? 0.4 : 1));
   set1f(fbProg, 'uDecay', Math.pow(decay60, f));
   // A 3D flight fills the whole screen, so rather than piling up into white as the trails build, each frame
   // only adds what the trails let fade: still parts keep their brightness and moving ones leave streaks
@@ -6697,7 +6805,7 @@ function runLoop(k, xf, brush, f) {
   set1f(fbProg, 'uBlur', clamp(c.blur, -0.3, 1));
   set1f(fbProg, 'uEdge', t.edge);
   set2f(fbProg, 'uShift', sx * f, sy * f);
-  set1f(fbProg, 'uGain', c.gain * gainBoost);
+  set1f(fbProg, 'uGain', c.gain);
   set1f(fbProg, 'uForm', t.form);
   if (t.in1 === 'wave' || t.in2 === 'wave') {
     computeWave(simT + (k === 'B' ? 11.0 : 0), t.form);
@@ -6867,6 +6975,8 @@ function frame() {
     for (const p of LOOP_SMOOTH) L.cur[p] += (L.tgt[p] - L.cur[p]) * (pinned(p, key) || ramping(p, key) ? k : kLoop);
   }
   for (const p of MIX_SLIDERS) mix.cur[p] += (mix.tgt[p] - mix.cur[p]) * (pinned(p) || rampingMix(p) ? k : kMix);
+  analyzeSound(dt, now);
+  updateMusicMappings(dt);
   if (ap.on && !frozen && now >= ap.next) apTick(now);
   if (lookOnScreen !== ratedLook) syncRated();
   if (!frozen) simT += dt;
@@ -6876,7 +6986,6 @@ function frame() {
   for (const [name, s] of Object.entries(LIVE_SRC)) if (s.video && uses(name)) s.update();
   vcrTick();
   packAdj();
-  analyzeSound(dt, now);
   drawMeter();
   if (!frozen) writeSpec(dt);
   // The 3D flights fly on, surging forward on the kick, and their lights flare on the beat
@@ -6884,9 +6993,9 @@ function frame() {
     const pace = reduceMotion ? 0.45 : 1;
     let surge = 1, glow = 1;
     if (snd.analyser) {
-      const a = sndPower(), E = snd.env, m = snd.map;
-      if (m.kick) surge *= 1 + a * (E.low * 1.2 + E.beat * 2.5);
-      if (m.flash) glow += a * (E.beat * 0.35 + E.low * 0.2);
+      const a = sndPower();
+      surge += a * (musicFX.forward * 1.8 + (musicFX.travel || 0) * 3);
+      glow += a * musicFX.shimmer * 1.2;
     }
     for (const name of Object.keys(SCENES)) {
       const sc = SCENES[name];
@@ -6894,7 +7003,23 @@ function frame() {
       const step = dt * sc.speed * pace * (1 + (surge - 1) * (sc.kick ?? 1));
       sc.z = (sc.z + step) % sc.period;
       // A fractal's wandering cameras fly on, each loop's only while that loop shows it
-      if (sc.fly) for (const k of ['A', 'B']) if (loops[k].tgt.in1 === name || loops[k].tgt.in2 === name) droneOf(sc, k).fly(step);
+      if (sc.fly) {
+        const a = reduceMotion ? sndPower() * 0.35 : sndPower();
+        const style = currentCameraStyle();
+        const motion = {
+          style,
+          speed: a * (musicFX.forward * 0.6 + (musicFX.travel || 0)),
+          surface: a * Math.max(musicFX.surface || 0, style === 'runner' ? musicFX.forward : 0),
+          orbit: a * (musicFX.orbit || 0),
+          turn45: a * (musicFX.turn45 || 0), turn90: a * (musicFX.turn90 || 0),
+          turnToken: musicFX.turnToken ?? null,
+        };
+        // Camera time stays steady; music changes actual velocity rather than speeding its steering clock.
+        for (const k of ['A', 'B']) if (loops[k].tgt.in1 === name || loops[k].tgt.in2 === name) {
+          try { droneOf(sc, k).fly(dt * sc.speed * pace, motion); }
+          catch (_) { recoverScene(name); break; }
+        }
+      }
       // Mount Ribbit's hikers walk on, the same way
       if (sc.ext) {
         const drive = ribDriven(), ctl = ribControls();
@@ -6940,11 +7065,9 @@ function frame() {
   // Hits from the music that show at once, on top of what they do inside the loops
   let punch = 0, flash = 0, hueKick = 0, shake = 0;
   if (snd.analyser) {
-    const a = sndPower(), E = snd.env, m = snd.map, calm = reduceMotion ? 0.4 : 1;
-    if (m.kick) punch = a * (E.beat * 0.06 + E.low * 0.025) * calm;
-    if (m.flash) flash = a * E.beat * 0.3;
-    if (m.color) hueKick = a * (E.high * 0.35 + E.beat * 0.3) * (snd.beats % 2 ? 1 : -1);
-    if (m.warp) shake = a * E.beat * calm;
+    const a = sndPower(), calm = reduceMotion ? 0.4 : 1;
+    punch = a * musicFX.forward * 0.075 * calm;
+    // Shimmer changes the scene lighting, preserving the background and avoiding full-screen flashes.
   }
   set1f(dispProg, 'uPunch', punch);
   set1f(dispProg, 'uFlash', flash);
@@ -6979,6 +7102,66 @@ function frame() {
   else requestAnimationFrame(frame);
 }
 
+function syncMappingUI() {
+  const fractal = !!SCENES[loops.A.tgt.in1]?.fly;
+  const camera = $('#cameraStyle');
+  if (camera) { camera.value = snd.cameraStyle; camera.disabled = !fractal; }
+  const referenceNote = $('#cameraReferenceNote'); if (referenceNote) referenceNote.hidden = !SCENES[loops.A.tgt.in1]?.test;
+  const cameraNote = $('#cameraStyleNote'); if (cameraNote) cameraNote.hidden = !fractal;
+  snd.routes.forEach((route, i) => {
+    const row = document.querySelector(`[data-music-route="${i}"]`);
+    if (!row) return;
+    row.querySelector('[data-field="source"]').value = route.source;
+    row.querySelector('[data-field="effect"]').value = route.effect;
+    const slider = row.querySelector('input'); slider.value = route.strength; fillTrack(slider);
+    row.querySelector('output').textContent = route.strength + '%';
+    slider.disabled = route.effect === 'none';
+    for (const choice of row.querySelector('[data-field="effect"]').options) {
+      choice.disabled = (route.source === 'pitch' && !['none', 'color'].includes(choice.value))
+        || (!fractal && ['surface', 'orbit', 'turn45', 'turn90'].includes(choice.value));
+    }
+    const option = row.querySelector('option[value="color"]');
+    option.textContent = SCENES[loops.A.tgt.in1]?.fly ? 'Structure color' : 'Scene color';
+  });
+}
+function createMusicMappings() {
+  const details = document.createElement('details'); details.id = 'musicMappings';
+  const summary = document.createElement('summary'); summary.textContent = 'Music mappings';
+  details.appendChild(summary);
+  const note = document.createElement('p'); note.className = 'hint';
+  note.textContent = 'BPM beat gives a steady pulse once tempo is found (about 12 seconds). Choose a sound, an effect, and its strength. Dominant pitch controls color, following clear notes in the mix. It holds the last color when uncertain and may follow bass or vocals.';
+  details.appendChild(note);
+  const pitchStatus = document.createElement('p'); pitchStatus.id = 'pitchStatus'; pitchStatus.className = 'hint'; pitchStatus.textContent = 'Pitch color: listening for a clear note'; details.appendChild(pitchStatus);
+  snd.routes.forEach((route, i) => {
+    const row = document.createElement('div'); row.className = 'music-route'; row.dataset.musicRoute = i;
+    for (const [field, options, title] of [['source', window.PhosphorMappings.sources, 'Sound'], ['effect', window.PhosphorMappings.effects, 'Effect']]) {
+      const select = document.createElement('select'); select.dataset.field = field;
+      select.setAttribute('aria-label', `Mapping ${i + 1} ${title.toLowerCase()}`);
+      for (const [value, text] of Object.entries(options)) {
+        const option = document.createElement('option'); option.value = value; option.textContent = text; select.appendChild(option);
+      }
+      select.value = route[field];
+      select.addEventListener('change', () => {
+        snd.routes[i][field] = select.value;
+        if (field === 'source' && select.value === 'pitch' && snd.routes[i].effect !== 'none') snd.routes[i].effect = 'color';
+        syncMappingUI();
+      });
+      row.appendChild(select);
+    }
+    const strength = document.createElement('div'); strength.className = 'music-strength';
+    const slider = document.createElement('input'); slider.type = 'range'; slider.min = 0; slider.max = 100; slider.value = route.strength;
+    slider.setAttribute('aria-label', `Mapping ${i + 1} strength`);
+    fillTrack(slider);
+    const output = document.createElement('output'); output.textContent = route.strength + '%';
+    slider.addEventListener('input', () => { snd.routes[i].strength = Number(slider.value); output.textContent = slider.value + '%'; fillTrack(slider); });
+    strength.append(slider, output); row.appendChild(strength); details.appendChild(row);
+  });
+  const reset = document.createElement('button'); reset.className = 'btn small'; reset.type = 'button'; reset.textContent = 'Reset mappings';
+  reset.addEventListener('click', () => { snd.routes = window.PhosphorMappings.defaults(); syncMappingUI(); saveSession(); });
+  details.appendChild(reset);
+  return details;
+}
+
 /* Minimal personal-site controls. Keep the shared renderer's legacy bindings isolated. */
 function setupMinimalUI() {
   document.body.classList.add('minimal');
@@ -6997,6 +7180,13 @@ function setupMinimalUI() {
     panel.appendChild(el); return el;
   };
   const audio = section('01 / Audio');
+  if (location.protocol === 'file:') {
+    const notice = document.createElement('p'); notice.id = 'localPreviewNotice'; notice.className = 'hint';
+    notice.append('BPM and pitch analysis need the local preview. ');
+    const link = document.createElement('a'); link.href = 'http://localhost:8000/'; link.textContent = 'Open local preview';
+    notice.append(link, ' (with the preview server running).');
+    audio.appendChild(notice);
+  }
   const connect = document.createElement('button');
   connect.className = 'btn wide'; connect.id = 'connectAudio';
   connect.textContent = 'Share audio';
@@ -7008,14 +7198,17 @@ function setupMinimalUI() {
   audio.appendChild(disconnect);
   audio.appendChild($('#sndStatus'));
   audio.appendChild($('#mLow').closest('.meter'));
+  audio.appendChild($('#rhythmStatus'));
+  audio.appendChild($('#rhythmPhase'));
   audio.appendChild($('#sndAmt').closest('.ctl'));
+  audio.appendChild(createMusicMappings());
   const note = document.createElement('p'); note.className = 'hint';
   note.textContent = 'No installation needed. Choose a music tab and enable Share tab audio. System audio is available when your browser offers it. Sharing needs a click each visit; your visual settings are remembered.';
   audio.appendChild(note);
   const visual = section('02 / Visualizer');
   const label = document.createElement('label'); label.htmlFor = 'sceneSelect'; label.textContent = 'Texture';
   const select = document.createElement('select'); select.id = 'sceneSelect';
-  for (const src of allScenes().filter((src) => src !== 'ribbit')) {
+  for (const src of [...allScenes().filter((src) => src !== 'ribbit'), ...['cameraSphere', 'cameraCube'].filter(worldOK)]) {
     const opt = document.createElement('option'); opt.value = src; opt.textContent = SRC_LABEL[src]; select.appendChild(opt);
   }
   select.addEventListener('change', () => {
@@ -7024,7 +7217,22 @@ function setupMinimalUI() {
     applyPatch({ A: { in1: source, trails: 0, size: 85 }, B: { in1: source, trails: 0, size: 85 } });
     syncUI(); saveSession();
   });
+  select.addEventListener('change', syncMappingUI);
   visual.append(label, select);
+  const cameraLabel = document.createElement('label'); cameraLabel.htmlFor = 'cameraStyle'; cameraLabel.textContent = 'Camera style';
+  const camera = document.createElement('select'); camera.id = 'cameraStyle';
+  camera.title = 'Camera styles are available for fractals. Camera speed also works in worlds.';
+  for (const [value, text] of Object.entries(CAMERA_STYLES)) {
+    const option = document.createElement('option'); option.value = value; option.textContent = text; camera.appendChild(option);
+  }
+  camera.value = snd.cameraStyle;
+  camera.addEventListener('change', () => { snd.cameraStyle = camera.value; saveSession(); });
+  const cameraNote = document.createElement('p'); cameraNote.id = 'cameraStyleNote'; cameraNote.className = 'hint';
+  cameraNote.textContent = 'Runner surges and springs away with the forward pulse. Crawler stays close with smaller steps. Mix switches styles every 16 beats. Add surface ride, orbit, or turns in Music mappings.';
+  const referenceNote = document.createElement('p'); referenceNote.id = 'cameraReferenceNote'; referenceNote.className = 'hint';
+  referenceNote.textContent = 'Camera sphere / cube: Glide shows the whole object; Runner and Crawler ride its surface. Try without music first. Panels show travel and edge crossings.';
+  visual.appendChild(referenceNote);
+  visual.append(cameraLabel, camera, cameraNote);
   const qualityLabel = document.createElement('label'); qualityLabel.htmlFor = 'renderQuality'; qualityLabel.textContent = 'Render resolution';
   const quality = document.createElement('select'); quality.id = 'renderQuality';
   for (const [value, text] of [[1, 'Native (100%)'], [0.75, '75% — faster'], [0.5, '50% — fastest']]) {
@@ -7050,7 +7258,7 @@ function setupMinimalUI() {
   // Do not accept files or teach profiles in this focused edition.
   window.addEventListener('drop', (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
   window.addEventListener('dragover', (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
-  const updateScene = () => { select.value = loops.A.tgt.in1; };
+  const updateScene = () => { select.value = loops.A.tgt.in1; syncMappingUI(); };
   document.addEventListener('pointerdown', () => { if (snd.ctx?.state === 'suspended') snd.ctx.resume().catch(() => {}); });
   updateScene();
   panel.addEventListener('input', saveSession);

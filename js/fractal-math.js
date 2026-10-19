@@ -118,7 +118,12 @@ const FR = (() => {
     const S = 2 / Math.pow(3, n);
     return p.map((v) => { const c = Math.max(-0.999, Math.min(0.999, v)); return (Math.floor((c + 1) / S) + 0.5) * S - 1; });
   }
-  return { spongeLure, sponge, bulb, box, pyramid, julia, kaleido, BOX_S, BOX_K, JC, JK, KR1, KR2, KS, KC, KSAFE };
+  const sphere = (x, y, z) => Math.hypot(x, y, z) - 1;
+  const cube = (x, y, z) => {
+    const a = Math.abs(x) - 1, b = Math.abs(y) - 1, c = Math.abs(z) - 1;
+    return Math.hypot(Math.max(a, 0), Math.max(b, 0), Math.max(c, 0)) + Math.min(Math.max(a, b, c), 0);
+  };
+  return { sphere, cube, spongeLure, sponge, bulb, box, pyramid, julia, kaleido, BOX_S, BOX_K, JC, JK, KR1, KR2, KS, KC, KSAFE };
 })();
 
 // ---- The wandering camera ----
@@ -154,17 +159,50 @@ function makeDrone(de, seed, o) {
   s.d = D(s.p);
   s.scale = Math.max(s.d, o.near);
   s.up = s.up0.slice();
+  s.velocity = [0, 0, 0];
+  s.motionSpeed = 1; s.surfaceDrive = 0; s.orbitDrive = 0;
+  s.clearance = o.far; s.turnRemaining = 0; s.turned = 0;
+  let styleSpeed = 1, styleClearance = 1, styleSteps = 0;
+  let previousSurface = 0, launch = 0, turnArmed = true, turnToken = null;
+  const v = [0, 0, 0];
+  let turnAxis = s.up0.slice();
+  const limit = (x, max = 1) => Number.isFinite(x) ? Math.max(0, Math.min(max, x)) : 0;
   // How deep the dive is (0 = far out, 1 = right in the finest detail), and whether it is on the way in
   const depthAt = (phase) => {
     const c = 0.5 - 0.5 * Math.cos(phase * 6.2832);
     return c * (0.78 + 0.22 * Math.sin(phase * 2.3 + ph[11]));
   };
-  function step(dt) {
+  function step(dt, motion) {
+    const style = motion.style || 'glide';
+    const runner = style === 'runner', crawler = style === 'crawler';
+    const smooth = 1 - Math.exp(-dt / 0.65);
+    styleSpeed += ((runner ? 1.9 : crawler ? 0.65 : 1) - styleSpeed) * smooth;
+    styleClearance += ((runner ? 0.5 : crawler ? 0.16 : 1) - styleClearance) * smooth;
+    styleSteps += ((runner ? 1 : crawler ? 0.55 : 0) - styleSteps) * smooth;
+    const drive = limit(motion.surface);
+    if (previousSurface > drive) launch = Math.min(1, launch + (previousSurface - drive) * 1.8);
+    previousSurface = drive;
+    launch *= Math.exp(-dt / 0.24);
+    s.surfaceDrive += (drive - s.surfaceDrive) * (1 - Math.exp(-dt / 0.09));
+    s.orbitDrive += (limit(motion.orbit) - s.orbitDrive) * (1 - Math.exp(-dt / 0.2));
+    s.motionSpeed += ((1 + 3 * limit(motion.speed) + s.surfaceDrive) - s.motionSpeed) * (1 - Math.exp(-dt / 0.12));
+    const turn = Math.max(limit(motion.turn45), limit(motion.turn90));
+    const token = motion.turnToken ?? null;
+    const turnEvent = token !== null ? token !== turnToken : turnArmed && turn > 0.08;
+    if (turnEvent && turn > 0.01) {
+      s.turnRemaining = Math.min(Math.PI, s.turnRemaining + (motion.turn90 > motion.turn45 ? Math.PI / 2 : Math.PI / 4));
+      const headingUp = dot(s.up0, s.f);
+      turnAxis = nrm(s.up0.map((value, i) => value - s.f[i] * headingUp));
+      turnArmed = false;
+    }
+    if (turn < 0.035) turnArmed = true;
+    turnToken = token;
     s.tau += dt;
     s.phase += dt / o.dive;
     const depth = depthAt(s.phase);
     const diving = depthAt(s.phase + 0.01) > depth;
-    const want = o.far * Math.pow(o.near / o.far, depth);   // the distance it wants to keep from the surface
+    const want = o.far * Math.pow(o.near / o.far, depth) * styleClearance * Math.exp(-0.8 * s.surfaceDrive);
+    s.clearance = want;   // the distance it wants to keep from the surface
     const p = s.p, t = s.tau;
     let d = D(p);
     const g = grad(p, d);
@@ -204,23 +242,44 @@ function makeDrone(de, seed, o) {
     const err = Math.log(Math.max(d, 1e-9) / want);
     const k = err > 0 ? -Math.min(err * 0.3, 0.6) : Math.min(-err * 1.6, 3);
     for (let i = 0; i < 3; i++) want3[i] += g[i] * k;
-    const wn = nrm(want3), kt = Math.min(1, 1.4 * dt);
+    if (s.orbitDrive > 0.001) {
+      const tangent = nrm(cross(g, Math.abs(g[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]));
+      for (let i = 0; i < 3; i++) want3[i] = want3[i] * (1 - s.orbitDrive) + (tangent[i] - g[i] * Math.max(-0.5, Math.min(0.5, err))) * s.orbitDrive;
+    }
+    const wn = nrm(want3), kt = s.turnRemaining > 0 ? 0 : Math.min(1, (1.4 + 2 * s.surfaceDrive + 2 * s.orbitDrive) * dt);
     const fNew = nrm([s.f[0] + (wn[0] - s.f[0]) * kt, s.f[1] + (wn[1] - s.f[1]) * kt, s.f[2] + (wn[2] - s.f[2]) * kt]);
+    if (s.turnRemaining > 0) {
+      const angle = Math.min(s.turnRemaining, dt * Math.PI * (1 + 3 * turn));
+      const axis = turnAxis, perpendicular = cross(axis, fNew), along = dot(axis, fNew);
+      const c = Math.cos(angle), sn = Math.sin(angle);
+      for (let i = 0; i < 3; i++) fNew[i] = fNew[i] * c + perpendicular[i] * sn + axis[i] * along * (1 - c);
+      s.turnRemaining -= angle; s.turned += angle;
+    }
     // Banks into its turns
     const yaw = dot(cross(s.f, fNew), s.up0) / Math.max(dt, 1e-4);
     s.bank += (Math.max(-0.7, Math.min(0.7, -yaw * 1.6)) - s.bank) * Math.min(1, 1.5 * dt);
     s.f = fNew;
-    // Moves a share of the distance to the surface, so it can never reach it
-    let mv = Math.min(o.speed * d * dt, 0.4 * d);
-    const np = [p[0] + s.f[0] * mv, p[1] + s.f[1] * mv, p[2] + s.f[2] * mv];
+    // Integrate real velocity in the surface's local frame. Every displacement is
+    // limited by its distance estimate and checked before committing the camera.
+    const gait = Math.sin(s.tau * (runner ? 12 : 22)) * styleSteps * 0.16;
+    const normalDrive = launch * 1.7 - s.surfaceDrive * 0.35 + gait;
+    const speed = o.speed * Math.max(d, 0) * styleSpeed * s.motionSpeed;
+    const inertia = 1 - Math.exp(-dt / 0.09);
+    for (let i = 0; i < 3; i++) v[i] += (s.f[i] * speed + g[i] * o.speed * d * normalDrive - v[i]) * inertia;
+    const distance = len(v) * dt;
+    const shrink = distance > 0 ? Math.min(1, Math.max(0, 0.35 * d) / distance) : 1;
+    const np = p.map((value, i) => value + v[i] * dt * shrink);
     const nd = D(np);
     if (nd > 0.25 * Math.min(d, want)) { s.p = np; d = nd; }
     else {
-      // Too close: back straight away from the surface instead
       const back = Math.max(0.15 * d, 0);
-      s.p = [p[0] + g[0] * back, p[1] + g[1] * back, p[2] + g[2] * back];
-      d = D(s.p);
+      const safe = p.map((value, i) => value + g[i] * back);
+      const safeDistance = D(safe);
+      if (safeDistance > 0) { s.p = safe; d = safeDistance; }
+      for (let i = 0; i < 3; i++) v[i] = 0;
     }
+    s.velocity = s.p.map((value, i) => (value - p[i]) / dt);
+    s.launch = launch;
     s.d = d;
     // The view looks where it is heading, leaning a little towards the nearest surface so the fractal stays in
     // view, and out in the open it turns to face the fractal (so pulling back out shows the whole thing)
@@ -234,7 +293,17 @@ function makeDrone(de, seed, o) {
     }
     s.empty += ((seen ? 0 : 1) - s.empty) * Math.min(1, 1.2 * dt);
     const lean = 0.3 + 1.2 * s.empty;
-    const lt = nrm([s.f[0] - lean * gl[0] - 2.5 * outside * s.p[0] / rr, s.f[1] - lean * gl[1] - 2.5 * outside * s.p[1] / rr, s.f[2] - lean * gl[2] - 2.5 * outside * s.p[2] / rr]);
+    let lt = nrm([s.f[0] - lean * gl[0] - 2.5 * outside * s.p[0] / rr, s.f[1] - lean * gl[1] - 2.5 * outside * s.p[1] / rr, s.f[2] - lean * gl[2] - 2.5 * outside * s.p[2] / rr]);
+    // Grounded POV looks along a surface rather than straight into its wall.
+    const grounded = (1 - outside) * Math.max(1 - styleClearance, s.surfaceDrive, s.orbitDrive);
+    if (grounded > 0.001) {
+      const normalPart = dot(s.f, gl);
+      let along = s.f.map((value, i) => value - gl[i] * normalPart);
+      if (len(along) < 0.05) along = cross(gl, Math.abs(gl[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]);
+      along = nrm(along);
+      const skim = nrm(along.map((value, i) => value - gl[i] * 0.12));
+      lt = nrm(lt.map((value, i) => value * (1 - grounded) + skim[i] * grounded));
+    }
     const kl = Math.min(1, 1.6 * dt);
     s.look = nrm([s.look[0] + (lt[0] - s.look[0]) * kl, s.look[1] + (lt[1] - s.look[1]) * kl, s.look[2] + (lt[2] - s.look[2]) * kl]);
     // Carry "up" along with the view, then roll it: a slow twist that sometimes goes all the way round, plus the bank
@@ -246,10 +315,78 @@ function makeDrone(de, seed, o) {
     s.scale = Math.exp(Math.log(s.scale) + (Math.log(Math.max(d, o.near * 0.5)) - Math.log(s.scale)) * Math.min(1, 2 * dt));
   }
   // Long steps (a slow computer, or a big kick of the bass) are split into short ones
-  s.fly = (dt) => { let left = dt; while (left > 1e-6) { const h = Math.min(left, 1 / 30); step(h); left -= h; } };
+  s.fly = (dt, motion = {}) => { let left = Number.isFinite(dt) ? Math.max(0, dt) : 0; while (left > 1e-6) { const h = Math.min(left, 1 / 30); step(h, motion); left -= h; } };
   return s;
 }
 
 
-return { FR, makeDrone };
+// Reference controller: a heading transported along one continuous surface.
+// No explorer noise, auto dive, global-up tangent switching, or camera roll.
+function makeSurfaceCamera(de, seed = 1, options = {}) {
+  const dot = (a, b) => a.reduce((sum, x, i) => sum + x * b[i], 0);
+  const norm = a => Math.hypot(...a);
+  const unit = a => { const length = norm(a) || 1; return a.map(x => x / length); };
+  const cross = (a, b) => [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+  const D = p => de(...p);
+  const normal = p => {
+    const h = 0.0001;
+    return unit(p.map((_, i) => { const a=p.slice(),b=p.slice(); a[i]+=h;b[i]-=h;return D(a)-D(b); }));
+  };
+  const rotate = (v, axis, angle) => {
+    const c=Math.cos(angle),sn=Math.sin(angle),ax=cross(axis,v),along=dot(axis,v);
+    return v.map((x,i)=>x*c+ax[i]*sn+axis[i]*along*(1-c));
+  };
+  const value = x => Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : 0;
+  let height=options.height || (options.style==='crawler' ? 0.08 : options.style==='runner' ? 0.16 : 2), heightVelocity=0, speed=options.speed || 0.65;
+  let baseHeight=height, groundView=options.style && options.style!=='glide' ? 1 : 0;
+  let up=[1,0,0], heading=[0,0,1], lastDrive=0, peak=0, armed=false, lastToken=null, turnArmed=true;
+  const s={p:[1+height,0,0],f:heading.slice(),look:[0,0,1],up:[1,0,0],velocity:[0,0,0],d:height,scale:height,clearance:height,turned:0,turnRemaining:0,tau:0};
+  function step(dt,motion) {
+    const old=s.p.slice(),style=motion.style || 'glide';
+    const desiredBase=options.height || (style==='crawler' ? 0.08 : style==='runner' ? 0.16 : 2);
+    baseHeight+=(desiredBase-baseHeight)*(1-Math.exp(-dt/0.65));
+    const base=baseHeight;
+    const drive=value(motion.surface),target=base*(1-0.4*drive);
+    peak=Math.max(peak,drive);
+    if(drive>0.4)armed=true;
+    if(armed && drive<0.25 && lastDrive>=0.25){heightVelocity+=base*7*peak;armed=false;peak=0;}
+    lastDrive=drive;
+    heightVelocity+=((target-height)*60-heightVelocity*10)*dt;
+    height=Math.max(0.025,Math.min(6,height+heightVelocity*dt));
+    const targetSpeed=(options.speed || 0.65)*(style==='runner'?1.7:style==='crawler'?0.55:1)*(1+3*value(motion.speed));
+    speed+=(targetSpeed-speed)*(1-Math.exp(-dt/0.15));
+    const level=Math.max(value(motion.turn45),value(motion.turn90)),token=motion.turnToken ?? null;
+    const trigger=token!==null ? token!==lastToken : turnArmed&&level>0.08;
+    if(trigger&&level>0.01){s.turnRemaining=Math.min(Math.PI,s.turnRemaining+(motion.turn90>motion.turn45?Math.PI/2:Math.PI/4));turnArmed=false;}
+    if(level<0.035)turnArmed=true;lastToken=token;
+    let angle=value(motion.orbit)*0.7*dt;
+    if(s.turnRemaining>0){const turn=Math.min(s.turnRemaining,dt*Math.PI*(1+3*level));angle+=turn;s.turnRemaining-=turn;s.turned+=turn;}
+    heading=unit(rotate(heading,up,angle));
+    const distance=Math.min(speed*dt,Math.max(0.005,height)*0.2);
+    let next=s.p.map((x,i)=>x+heading[i]*distance);
+    // Project onto the offset surface, including the rounded path around cube edges.
+    for(let i=0;i<8;i++){
+      const error=D(next)-height;if(Math.abs(error)<1e-8)break;
+      const g=normal(next);next=next.map((x,j)=>x-g[j]*error);
+    }
+    const nextUp=normal(next),axis=cross(up,nextUp),length=norm(axis);
+    if(length>1e-9)heading=rotate(heading,axis.map(x=>x/length),Math.atan2(length,Math.max(-1,Math.min(1,dot(up,nextUp)))));
+    heading=unit(heading.map((x,i)=>x-nextUp[i]*dot(heading,nextUp)));
+    if(D(next)>0){s.p=next;up=nextUp;}
+    s.f=heading.slice();s.d=D(s.p);s.clearance=target;s.scale=Math.max(height,0.025);
+    groundView+=((style==='glide'?0:1)-groundView)*(1-Math.exp(-dt/0.3));
+    const overview=unit(s.p.map(x=>-x)),surfaceLook=unit(heading.map((x,i)=>x-up[i]*(style==='crawler'?0.75:0.6)));
+    s.look=unit(overview.map((x,i)=>x*(1-groundView)+surfaceLook[i]*groundView));
+    const sky=unit(cross(overview,heading));
+    const wantedUp=unit(sky.map((x,i)=>x*(1-groundView)+up[i]*groundView));
+    const lean=dot(wantedUp,s.look);s.up=unit(wantedUp.map((x,i)=>x-s.look[i]*lean));
+    s.velocity=s.p.map((x,i)=>(x-old[i])/dt);s.tau+=dt;
+  }
+  s.fly=(dt,motion={})=>{let left=Number.isFinite(dt)?Math.max(0,dt):0;while(left>1e-7){const h=Math.min(left,1/120);step(h,motion);left-=h;}};
+  s.fly(1/120,{style:options.style || 'glide'}); // establish a consistent initial view without waiting for audio
+  return s;
+}
+
+
+return { FR, makeDrone, makeSurfaceCamera };
 })();

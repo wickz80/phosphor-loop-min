@@ -21,6 +21,7 @@ const FS_FEEDBACK = `#version 300 es
 precision highp float;
 uniform sampler2D uPrev, uOther, uPic, uVid0, uVid1, uCam0, uCam1, uScr0, uScr1, uPho0, uPho1, uOtherPrev, uScene1, uScene2, uText;
 uniform vec2 uSim;
+uniform float uMusicSpin, uMusicWarp;
 uniform float uTime, uZoom, uSpin, uDecay, uHue, uWarp, uMirror, uBlur, uEdge, uGain, uForm, uFloor, uBrushOn;
 uniform float uBlend, uScale, uMotion, uXfeed;
 uniform float uFlow, uSplit, uSplitOff, uInkDt;
@@ -434,7 +435,7 @@ vec3 source(int id, vec2 p, sampler2D scene) {
   if (id == 24) return seedText(p, uTime);
   // The 3D worlds (Cubes to Nebula, City, and Mount Ribbit at 31) and the fractal flights (25 to 30), each drawn just before this
   // pass (see draw3D) filling the screen
-  if ((id >= 13 && id <= 21) || id == 23 || (id >= 25 && id <= 31)) return uSceneK * texture(scene, clamp(p / vec2(uSim.x / uSim.y, 1.0) + 0.5, 0.0, 1.0)).rgb;
+  if ((id >= 13 && id <= 21) || id == 23 || (id >= 25 && id <= 33)) return uSceneK * texture(scene, clamp(p / vec2(uSim.x / uSim.y, 1.0) + 0.5, 0.0, 1.0)).rgb;
   if (id == 4) return still(uPic, uAspPic, p, 4);
   if (id == 5) return live(uVid0, uVid1, uAspVid, 0.0, p, 5, 0.3);
   if (id == 6) return live(uCam0, uCam1, uAspCam, uFlipCam, p, 6, 0.3);
@@ -495,7 +496,8 @@ void main() {
   fb = max(hueRot(fb, uHue), 0.0);
   fb = clamp(fb * uDecay - uFloor, 0.0, 1.0) * inside;
 
-  vec2 ps = pf + vec2(uSplitOff * side, 0.0);
+  vec2 ps = rot(uMusicSpin) * pf + vec2(uSplitOff * side, 0.0);
+  ps += uMusicWarp * vec2(sin(ps.y * 7.0 + uTime), cos(ps.x * 7.0 - uTime * 0.8));
   gSpecA = 0.0;
   vec3 s = source(uIn1, ps, uScene1);
   float specA = gSpecA;
@@ -1865,6 +1867,15 @@ void main() {
 // deep the camera has dived, the picture is drawn and lit the same way: that is what makes the zoom endless.
 // Each fractal brings its shape (map: distance, plus a note of how the folding went, used for colour) and
 // its colours (paint).
+// Tint materials while preserving their brightness and geometric shading.
+const MUSIC_MATERIAL = `
+uniform vec2 uMusicColor; // pitch-class hue and bounded blend
+vec3 musicTint(vec3 original) {
+  vec3 palette = 0.55 + 0.45 * cos(6.2831853 * (uMusicColor.x + vec3(0.0, 0.67, 0.33)));
+  float light = dot(original, vec3(0.2126, 0.7152, 0.0722));
+  palette *= light / max(0.1, dot(palette, vec3(0.2126, 0.7152, 0.0722)));
+  return mix(original, palette, clamp(uMusicColor.y, 0.0, 0.85));
+}`;
 function fractalFS(map, paint, deq) {
   return `#version 300 es
 precision highp float;
@@ -1876,6 +1887,7 @@ uniform vec3 uCam;       // where the wandering camera is, which way it looks, a
 uniform vec3 uFwd;
 uniform vec3 uUp;
 uniform float uScale;    // how far the nearest surface is: the zoom
+${MUSIC_MATERIAL}
 out vec4 o;
 vec3 hue(float x) { return 0.5 + 0.5 * cos(6.28318 * (x + vec3(0.0, 0.33, 0.67))); }
 ${map}
@@ -1923,6 +1935,7 @@ void main() {
     float rim = pow(1.0 - max(dot(n, -rd), 0.0), 3.0);
     vec3 base, emit;
 ${paint}
+    base = musicTint(base); emit = musicTint(emit);
     col = base * (0.035 + dif * 1.25 * att + fill * 0.2) * ao + vec3(1.0, 0.95, 0.9) * spec * 0.5 * att * ao;
     col += glowC * rim * 0.35 * ao * uGlow + emit * uGlow;
     col = mix(col, fogC, fogK);
@@ -1937,6 +1950,30 @@ ${paint}
   o = vec4(col, 1.0);
 }`;
 }
+
+// Plain reference objects make camera motion and surface contact easy to inspect.
+const FS_CAMERA_SPHERE = fractalFS(`
+float map(vec3 p, out vec4 tr) { tr = vec4(p, 1.0); return length(p) - 1.0; }
+`, `
+    vec2 uv = vec2(atan(pos.z, pos.x) * 2.54648, asin(clamp(pos.y / max(length(pos), 0.001), -1.0, 1.0)) * 2.54648);
+    vec2 seam = abs(fract(uv + 0.5) - 0.5);
+    float line = 1.0 - smoothstep(0.025, 0.055, min(seam.x, seam.y));
+    base = mix(vec3(0.85, 0.3, 0.065), vec3(0.035), line);
+    emit = vec3(0.0); fogC = vec3(0.012, 0.025, 0.04); glowC = vec3(0.08, 0.2, 0.3);
+`);
+const FS_CAMERA_CUBE = fractalFS(`
+float map(vec3 p, out vec4 tr) {
+  tr = vec4(p, 1.0); vec3 q = abs(p) - 1.0;
+  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+`, `
+    vec3 an = abs(n);
+    vec2 uv = an.x > an.y && an.x > an.z ? pos.yz : an.y > an.z ? pos.xz : pos.xy;
+    float check = mod(floor(uv.x * 4.0) + floor(uv.y * 4.0), 2.0);
+    vec3 face = an.x * vec3(0.85, 0.25, 0.15) + an.y * vec3(0.15, 0.7, 0.35) + an.z * vec3(0.2, 0.4, 0.85);
+    base = face * mix(0.35, 1.0, check);
+    emit = vec3(0.0); fogC = vec3(0.012, 0.025, 0.04); glowC = vec3(0.08, 0.2, 0.3);
+`);
 
 const FS_SPONGE = fractalFS(`
 // Menger sponge: a cube with a cross-shaped hole through it, and the same hole through every smaller cube.
@@ -2114,5 +2151,5 @@ void main() {
   o = vec4(clamp(c * 0.25, 0.0, 1.0), 1.0);
 }`;
 
-return { FS_COPY, FS_PROBE, FS_EYE, VS, COMMON, FS_FEEDBACK, FS_COMPOSITE, FS_TIMEWARP, FS_DISPLAY, FS_CUBES, FS_HORIZON, FS_CAVERN, FS_BLACKHOLE, FS_AURORA, FS_MERCURY, FS_FRACTAL, FS_NEBULA, FS_CITY, FS_SPONGE, FS_BULB, FS_MANDELBOX, FS_SIERPINSKI, FS_JULIA, FS_KALEIDO };
+return { FS_CAMERA_SPHERE, FS_CAMERA_CUBE, MUSIC_MATERIAL, FS_COPY, FS_PROBE, FS_EYE, VS, COMMON, FS_FEEDBACK, FS_COMPOSITE, FS_TIMEWARP, FS_DISPLAY, FS_CUBES, FS_HORIZON, FS_CAVERN, FS_BLACKHOLE, FS_AURORA, FS_MERCURY, FS_FRACTAL, FS_NEBULA, FS_CITY, FS_SPONGE, FS_BULB, FS_MANDELBOX, FS_SIERPINSKI, FS_JULIA, FS_KALEIDO };
 })();

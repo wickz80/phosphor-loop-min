@@ -11,7 +11,8 @@ ceiling, and a page that stops drawing ends the check at once, so a broken build
 Options: --frames N (frames before each picture, default 120), --res H (test picture height, default 216),
 --out DIR (where pictures go, default <temp>/phosphor-check), --skip-workout.
 PL_ROOT=/some/folder checks a copy of the site somewhere else. Exit code 0 = passed.
-Needs Python Playwright and Pillow (both pre-installed in Claude's workspace).
+Needs Python Playwright and Pillow. Uses installed Mac Chrome when available,
+or Playwright's Chromium browser otherwise.
 """
 import argparse
 import base64
@@ -68,9 +69,13 @@ def patched_index(res):
     with open(os.path.join(ROOT, 'index.html'), encoding='utf-8') as f:
         html = f.read()
     def inline_script(match):
-        with open(os.path.join(ROOT, match[1]), encoding='utf-8') as f:
+        with open(os.path.join(ROOT, match[1].split('?', 1)[0]), encoding='utf-8') as f:
             return '<script>' + f.read() + '</script>'
-    html = re.sub(r'<script src="(js/[^" ]+\.js)"></script>', inline_script, html)
+    html = re.sub(r'<script src="(js/[^" ]+\.js(?:\?[^"]*)?)"></script>', inline_script, html)
+    # The minimal edition follows physical canvas pixels; use its existing fixed-size capture path.
+    if 'function setupMinimalUI()' in html:
+        config = f'<script>window.__phosphorCaptureConfig = {{width:{round(res * 16 / 9)},height:{res},renderHeight:{res}}};</script>'
+        html = html.replace('</head>', config + '</head>', 1)
     notes = []
     if 'const SIM_H = 576;' in html:
         html = html.replace('const SIM_H = 576;', f'const SIM_H = {res};', 1)
@@ -125,13 +130,24 @@ def run(c, a, base, problems):
         problems.append(f'the picture is black (brightness {light:.1f} of 255)')
     # 3. A quick workout through the main buttons
     if not a.skip_workout:
-        for sel, n in WORKOUT:
+        minimal = pg.evaluate("document.body.classList.contains('minimal')")
+        workout = [('#autopilot', 20), ('#autopilot', 3), ('#neutral', 5), ('#freeze', 3), ('#freeze', 3)] if minimal else WORKOUT
+        for sel, n in workout:
             try:
                 pg.click(sel)
             except Exception as e:
                 problems.append(f'could not press {sel}: {str(e).splitlines()[0]}')
                 continue
             c.wait_frames(n, f'after pressing {sel}')
+        if minimal:
+            for scene in ['sierpinski', 'mercury']:
+                pg.select_option('#sceneSelect', scene)
+                c.wait_frames(10, f'after selecting {scene}')
+            pg.click('#nextLookBar')
+            c.wait_frames(10, 'after Next look')
+            if pg.get_attribute('#autopilot', 'aria-pressed') == 'true':
+                pg.click('#autopilot')
+                c.wait_frames(3, 'after stopping Autopilot')
     # 4. Pictures of Guide recipes, each after a set number of frames
     for spec in a.shot:
         name, *sets = spec.split('|')
@@ -167,7 +183,11 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     fps = 0
     with sync_playwright() as p:
-        b = p.chromium.launch(args=['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'])
+        launch = {'args': ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']}
+        chrome = os.environ.get('PHOSPHOR_CHROME') or '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+        if os.path.isfile(chrome):
+            launch['executable_path'] = chrome
+        b = p.chromium.launch(**launch)
         pg = b.new_page(viewport={'width': 1280, 'height': 800})
         pg.set_default_timeout(FAIL_FAST_MS)
         pg.route(lambda u: u.rstrip('/').endswith(f':{port}') or u.split('?')[0].endswith('/index.html'),
