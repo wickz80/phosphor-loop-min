@@ -79,3 +79,6 @@ attack-driven effects; a newly selected Kick mapping stays Kick on future reload
 Mapping strength controls cover subtle through pronounced responses. The slider
 fill follows its value, including after restoring or resetting mappings.
 Rendered effect checks: npm run test:music-response (fixed-scene peak vs neutral).
+
+Production deployment: pushes to main publish independently to https://wix.fyi/loop/.
+See docs/deployment.md for the GitHub OIDC role, hosting integration, and checks.

@@ -1,0 +1,69 @@
+name: Deploy loop
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: loop-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '22'
+      - name: Read deployment configuration
+        id: config
+        run: node tools/deploy/config.mjs >> "$GITHUB_OUTPUT"
+      - name: Check deployment packaging and cache isolation
+        run: node --test tests/deployment.test.mjs
+      - name: Package browser assets
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: node tools/deploy/package.mjs "$RUNNER_TEMP/loop-site" "$COMMIT_SHA"
+      - name: Authenticate to AWS
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ steps.config.outputs.roleArn }}
+          aws-region: ${{ steps.config.outputs.region }}
+          allowed-account-ids: ${{ steps.config.outputs.accountId }}
+          role-session-name: loop-${{ github.run_id }}
+      - name: Upload loop
+        env:
+          SITE_BUCKET: ${{ steps.config.outputs.bucket }}
+        run: |
+          aws s3 sync "$RUNNER_TEMP/loop-site/" "s3://$SITE_BUCKET/" \
+            --delete --exclude index.html --exclude sw.js \
+            --cache-control no-cache --no-progress --only-show-errors
+          aws s3 cp "$RUNNER_TEMP/loop-site/index.html" "s3://$SITE_BUCKET/index.html" \
+            --cache-control no-cache --content-type text/html --only-show-errors
+          aws s3 cp "$RUNNER_TEMP/loop-site/sw.js" "s3://$SITE_BUCKET/sw.js" \
+            --cache-control no-cache --content-type text/javascript --only-show-errors
+      - name: Refresh CloudFront
+        env:
+          DISTRIBUTION_ID: ${{ steps.config.outputs.distributionId }}
+        run: |
+          invalidation_id=$(aws cloudfront create-invalidation \
+            --distribution-id "$DISTRIBUTION_ID" --paths '/loop' '/loop/*' \
+            --query Invalidation.Id --output text)
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "$DISTRIBUTION_ID" --id "$invalidation_id"
+      - name: Verify public entrypoint
+        run: |
+          curl --fail --silent --show-error --retry 4 --retry-all-errors \
+            https://wix.fyi/loop/ --output "$RUNNER_TEMP/loop-index.html"
+          test -s "$RUNNER_TEMP/loop-index.html"
+          grep -q 'id="sceneSelect"\|id="screen"' "$RUNNER_TEMP/loop-index.html"

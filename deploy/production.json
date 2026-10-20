@@ -1,0 +1,7 @@
+{
+  "accountId": "097029023067",
+  "region": "us-east-1",
+  "bucket": "wix-fyi-phosphor-loop-097029023067",
+  "roleArn": "arn:aws:iam::097029023067:role/wix-fyi-phosphor-loop-deploy",
+  "distributionId": "E3PRC6LVV454J"
+}
