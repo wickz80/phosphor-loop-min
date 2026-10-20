@@ -16,7 +16,9 @@ Production URL: https://wix.fyi/loop/.
   requests to S3, and serves bucket-root `index.html` for `/loop/`. Thus files in
   the bucket have normal root keys like `index.html`, `js/app.js`, and `sw.js`.
 - IAM role `wix-fyi-phosphor-loop-deploy`, trusting GitHub OIDC only for
-  `wickz80/phosphor-loop-min` on `main`. It can modify objects in this dedicated
+  `wickz80/phosphor-loop-min` on `main`, using its immutable OIDC subject:
+  `repo:wickz80@32722332/phosphor-loop-min@1424659759:ref:refs/heads/main`.
+  It can modify objects in this dedicated
   bucket and invalidate/wait for the shared distribution. It has no write access
   to the personal site's bucket. CloudFront invalidation permission is scoped to
   the distribution; the workflow requests only `/loop` and `/loop/*`.
