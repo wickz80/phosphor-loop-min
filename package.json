@@ -22,9 +22,10 @@
     "test:rhythm": "node tests/rhythm.mjs",
     "test:mappings": "node tests/music-mappings.mjs",
     "test:music-response": "node tests/music-response.mjs",
-    "test:camera": "node tests/camera-motion.mjs",
-    "test:surface-camera": "node tests/surface-camera.mjs",
-    "test:scene-recovery": "node tests/reference-recovery.mjs"
+    "test:scene-recovery": "node tests/reference-recovery.mjs",
+    "perf": "node tools/perf/benchmark.mjs",
+    "test:render-quality": "node tests/render-quality.mjs",
+    "test:shaders": "node tests/shader-equivalence.mjs"
   },
   "dependencies": {
     "essentia.js": "0.1.3",

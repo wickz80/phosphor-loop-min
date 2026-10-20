@@ -1,0 +1,652 @@
+{
+  "before": {
+    "hardware": {
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)",
+      "timer": true
+    },
+    "results": [
+      {
+        "scene": "mercury",
+        "scale": "1",
+        "pacing": {
+          "fps": 27.669827452199602,
+          "p95": 50
+        },
+        "size": "5372 \u00d7 2460",
+        "frame": {
+          "mean": 35.58983050847456,
+          "p50": 33.30000000000018,
+          "p95": 50,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "composite": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            5372,
+            2460
+          ],
+          "feedback": [
+            5372,
+            2460
+          ],
+          "composite": [
+            5372,
+            2460
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "mercury",
+        "scale": "0.5",
+        "pacing": {
+          "fps": 60.00134834490658,
+          "p95": 16.80000000000109
+        },
+        "size": "2686 \u00d7 1230",
+        "frame": {
+          "mean": 16.666101694915273,
+          "p50": 16.69999999999891,
+          "p95": 16.700000000000728,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "composite": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            2686,
+            1230
+          ],
+          "feedback": [
+            2686,
+            1230
+          ],
+          "composite": [
+            2686,
+            1230
+          ],
+          "display": [
+            2686,
+            1230
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "cubes",
+        "scale": "1",
+        "pacing": {
+          "fps": 34.45205744590254,
+          "p95": 33.400000000001455
+        },
+        "size": "5372 \u00d7 2460",
+        "frame": {
+          "mean": 29.94237288135594,
+          "p50": 33.30000000000109,
+          "p95": 33.399999999999636,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "composite": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            5372,
+            2460
+          ],
+          "feedback": [
+            5372,
+            2460
+          ],
+          "composite": [
+            5372,
+            2460
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "cubes",
+        "scale": "0.5",
+        "pacing": {
+          "fps": 60.00539374325779,
+          "p95": 16.799999999999272
+        },
+        "size": "2686 \u00d7 1230",
+        "frame": {
+          "mean": 16.666101694915305,
+          "p50": 16.69999999999709,
+          "p95": 16.799999999999272,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "composite": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            2686,
+            1230
+          ],
+          "feedback": [
+            2686,
+            1230
+          ],
+          "composite": [
+            2686,
+            1230
+          ],
+          "display": [
+            2686,
+            1230
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "sponge",
+        "scale": "1",
+        "pacing": {
+          "fps": 46.844570766882434,
+          "p95": 33.400000000001455
+        },
+        "size": "5372 \u00d7 2460",
+        "frame": {
+          "mean": 20.620338983050885,
+          "p50": 16.700000000000728,
+          "p95": 33.39999999999782,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "composite": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            5372,
+            2460
+          ],
+          "feedback": [
+            5372,
+            2460
+          ],
+          "composite": [
+            5372,
+            2460
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "sponge",
+        "scale": "0.5",
+        "pacing": {
+          "fps": 60.00134834490666,
+          "p95": 16.700000000000728
+        },
+        "size": "2686 \u00d7 1230",
+        "frame": {
+          "mean": 16.66610169491524,
+          "p50": 16.69999999999709,
+          "p95": 16.700000000000728,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "composite": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            2686,
+            1230
+          ],
+          "feedback": [
+            2686,
+            1230
+          ],
+          "composite": [
+            2686,
+            1230
+          ],
+          "display": [
+            2686,
+            1230
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "mandelbulb",
+        "scale": "1",
+        "pacing": {
+          "fps": 27.95928625282734,
+          "p95": 50
+        },
+        "size": "5372 \u00d7 2460",
+        "frame": {
+          "mean": 35.02542372881356,
+          "p50": 33.30000000000291,
+          "p95": 50,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "composite": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            5372,
+            2460
+          ],
+          "feedback": [
+            5372,
+            2460
+          ],
+          "composite": [
+            5372,
+            2460
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "mandelbulb",
+        "scale": "0.5",
+        "pacing": {
+          "fps": 60.0013483449068,
+          "p95": 16.700000000004366
+        },
+        "size": "2686 \u00d7 1230",
+        "frame": {
+          "mean": 16.667796610169393,
+          "p50": 16.69999999999709,
+          "p95": 16.799999999995634,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "composite": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            2686,
+            1230
+          ],
+          "feedback": [
+            2686,
+            1230
+          ],
+          "composite": [
+            2686,
+            1230
+          ],
+          "display": [
+            2686,
+            1230
+          ]
+        },
+        "allocations": 0
+      }
+    ]
+  },
+  "auto": {
+    "hardware": {
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)",
+      "timer": true
+    },
+    "results": [
+      {
+        "scene": "mercury",
+        "scale": "1",
+        "pacing": {
+          "fps": 60.001348344906624,
+          "p95": 16.799999999999727
+        },
+        "size": "5372 \u00d7 2460",
+        "frame": {
+          "mean": 16.66610169491526,
+          "p50": 16.699999999999818,
+          "p95": 16.800000000000182,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            2837,
+            1299
+          ],
+          "feedback": [
+            5372,
+            2460
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "cubes",
+        "scale": "1",
+        "pacing": {
+          "fps": 60.00134834490666,
+          "p95": 16.700000000000728
+        },
+        "size": "5372 \u00d7 2460",
+        "frame": {
+          "mean": 16.66610169491524,
+          "p50": 16.699999999999818,
+          "p95": 16.799999999999272,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            2837,
+            1299
+          ],
+          "feedback": [
+            5372,
+            2460
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "sponge",
+        "scale": "1",
+        "pacing": {
+          "fps": 60.00134834490658,
+          "p95": 16.799999999999272
+        },
+        "size": "5372 \u00d7 2460",
+        "frame": {
+          "mean": 16.66440677966103,
+          "p50": 16.69999999999891,
+          "p95": 16.700000000000728,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            2837,
+            1299
+          ],
+          "feedback": [
+            5372,
+            2460
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "mandelbulb",
+        "scale": "1",
+        "pacing": {
+          "fps": 58.044740103045676,
+          "p95": 16.80000000000109
+        },
+        "size": "5372 \u00d7 2460",
+        "frame": {
+          "mean": 16.66610169491524,
+          "p50": 16.69999999999891,
+          "p95": 16.700000000000728,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            2412,
+            1104
+          ],
+          "feedback": [
+            5372,
+            2460
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      }
+    ]
+  },
+  "full": {
+    "hardware": {
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)",
+      "timer": true
+    },
+    "results": [
+      {
+        "scene": "mercury",
+        "scale": "1",
+        "pacing": {
+          "fps": 30.1705142547205,
+          "p95": 50
+        },
+        "size": "5372 \u00d7 2460",
+        "frame": {
+          "mean": 33.05084745762712,
+          "p50": 33.30000000000018,
+          "p95": 49.899999999999636,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            5372,
+            2460
+          ],
+          "feedback": [
+            5372,
+            2460
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "mandelbulb",
+        "scale": "1",
+        "pacing": {
+          "fps": 30.342288285831184,
+          "p95": 50
+        },
+        "size": "5372 \u00d7 2460",
+        "frame": {
+          "mean": 35.02542372881356,
+          "p50": 33.30000000000109,
+          "p95": 50,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            5372,
+            2460
+          ],
+          "feedback": [
+            5372,
+            2460
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      }
+    ]
+  },
+  "crossfadeBefore": {
+    "hardware": {
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)",
+      "timer": true
+    },
+    "results": [
+      {
+        "scene": "crossfade",
+        "scale": "0.5",
+        "pacing": {
+          "fps": 48.995320671621265,
+          "p95": 33.40000000000009
+        },
+        "size": "2686 \u00d7 1230",
+        "frame": {
+          "mean": 20.337288135593216,
+          "p50": 16.699999999999818,
+          "p95": 33.399999999999636,
+          "n": 59
+        },
+        "passes": {
+          "scene": 120,
+          "feedback": 120,
+          "composite": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            2686,
+            1230
+          ],
+          "feedback": [
+            2686,
+            1230
+          ],
+          "composite": [
+            2686,
+            1230
+          ],
+          "display": [
+            2686,
+            1230
+          ]
+        },
+        "allocations": 120
+      }
+    ]
+  },
+  "crossfadeAfter": {
+    "hardware": {
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)",
+      "timer": true
+    },
+    "results": [
+      {
+        "scene": "crossfade",
+        "scale": "0.5",
+        "pacing": {
+          "fps": 43.77120936408793,
+          "p95": 33.40000000000009
+        },
+        "size": "2686 \u00d7 1230",
+        "frame": {
+          "mean": 23.727118644067797,
+          "p50": 16.700000000000728,
+          "p95": 33.400000000000546,
+          "n": 59
+        },
+        "passes": {
+          "scene": 120,
+          "feedback": 120,
+          "composite": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            2686,
+            1230
+          ],
+          "feedback": [
+            2686,
+            1230
+          ],
+          "composite": [
+            2686,
+            1230
+          ],
+          "display": [
+            2686,
+            1230
+          ]
+        },
+        "allocations": 0
+      }
+    ]
+  }
+}

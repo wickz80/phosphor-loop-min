@@ -1,7 +1,7 @@
 (() => {
 'use strict';
-const { FR, makeDrone, makeSurfaceCamera } = window.PhosphorFractals;
-const { FS_CAMERA_SPHERE, FS_CAMERA_CUBE, MUSIC_MATERIAL, VS, FS_COPY, FS_PROBE, FS_EYE, COMMON, FS_FEEDBACK, FS_COMPOSITE, FS_TIMEWARP, FS_DISPLAY, FS_CUBES, FS_HORIZON, FS_CAVERN, FS_BLACKHOLE, FS_AURORA, FS_MERCURY, FS_FRACTAL, FS_NEBULA, FS_CITY, FS_SPONGE, FS_BULB, FS_MANDELBOX, FS_SIERPINSKI, FS_JULIA, FS_KALEIDO } = window.PhosphorShaders;
+const { FR, makeDrone } = window.PhosphorFractals;
+const { MUSIC_MATERIAL, VS, FS_COPY, FS_PROBE, FS_EYE, COMMON, FS_FEEDBACK, FS_COMPOSITE, FS_TIMEWARP, FS_DISPLAY, FS_CUBES, FS_HORIZON, FS_CAVERN, FS_BLACKHOLE, FS_AURORA, FS_MERCURY, FS_FRACTAL, FS_NEBULA, FS_CITY, FS_SPONGE, FS_BULB, FS_MANDELBOX, FS_SIERPINSKI, FS_JULIA, FS_KALEIDO } = window.PhosphorShaders;
 const { clamp, rnd, pick, hsv, foldJS, stamp, randId, loadScript } = window.PhosphorHelpers;
 const { addWebmDuration, standardMp4 } = window.PhosphorRecording;
 
@@ -26,9 +26,9 @@ if (swOK) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 const SRC_ID = { wave: 0, shape: 1, bars: 2, sparks: 3, picture: 4, video: 5, camera: 6, screen: 7, phone: 8, none: 9, loop: 10, ink: 11, cubes: 13, horizon: 14, cavern: 15,
                  blackhole: 16, aurora: 17, mercury: 18, fractal: 19, nebula: 21, spectro: 22, city: 23, text: 24,
-                 sponge: 25, mandelbulb: 26, mandelbox: 27, sierpinski: 28, julia3d: 29, kaleido: 30, ribbit: 31, cameraSphere: 32, cameraCube: 33 };
+                 sponge: 25, mandelbulb: 26, mandelbox: 27, sierpinski: 28, julia3d: 29, kaleido: 30, ribbit: 31 };
 const SRC_LABEL = { wave: 'Wave', shape: 'Shape', bars: 'Bars', sparks: 'Sparks', ink: 'Ink', text: 'Text', cubes: 'Cubes', horizon: 'Horizon', cavern: 'Cavern', spectro: 'Spectrograph', city: 'City',
-                    blackhole: 'Black hole', aurora: 'Aurora', mercury: 'Mercury', fractal: 'Fractal', nebula: 'Nebula', ribbit: 'Mount Ribbit', cameraSphere: 'Camera sphere', cameraCube: 'Camera cube',
+                    blackhole: 'Black hole', aurora: 'Aurora', mercury: 'Mercury', fractal: 'Fractal', nebula: 'Nebula', ribbit: 'Mount Ribbit',
                     sponge: 'Menger sponge', mandelbulb: 'Mandelbulb', mandelbox: 'Mandelbox', sierpinski: 'Sierpinski', julia3d: 'Julia', kaleido: 'Kaleidoscope', picture: 'Picture', video: 'Video', camera: 'Camera', screen: 'Screen', phone: 'Phone', none: 'Nothing', loop: 'Other loop' };
 const LIVE = ['video', 'camera', 'screen', 'phone', 'loop'];   // inputs that can use Only movement
 const DEVICE = ['camera', 'screen', 'phone'];
@@ -165,8 +165,6 @@ try {
 // The 3D worlds: what the picker calls each, how fast it moves (in its own units a second: along the
 // flight, or round the circle for Black hole and Mercury), after how far it repeats exactly, where loop B
 // starts in it, and for soft ones, how finely it is drawn (smaller is quicker, smoothed back up to size).
-const cameraReferencesReady = typeof makeSurfaceCamera === 'function' && typeof FR.sphere === 'function' && typeof FR.cube === 'function'
-  && typeof FS_CAMERA_SPHERE === 'string' && typeof FS_CAMERA_CUBE === 'string';
 const SCENES = {
   cubes:     { fs: FS_CUBES,     label: 'Cubes',      speed: 0.9,   period: 2048,          offB: 1000 },
   horizon:   { fs: FS_HORIZON,   label: 'Horizon',    speed: 6.5,   period: 512,           offB: 256 },
@@ -182,10 +180,6 @@ const SCENES = {
   ribbit:    { ext: window.PhosphorRibbit || null, label: 'Mount Ribbit', speed: 1, period: 1e9, offB: 0, kick: 0.5 },
   // The fractal flights (under their own Fractals button): no set path, a wandering camera for each loop
   // instead (see makeDrone). Their speed is the camera's pace; how close it may dive (near) suits each one's detail.
-  ...(cameraReferencesReady ? {
-  cameraSphere: { fs: FS_CAMERA_SPHERE, label: 'Camera sphere', group: 'fractal', test: true, speed: 1, period: 1e9, offB: 0, fly: { de: FR.sphere, near: 0.02, surface: true } },
-  cameraCube: { fs: FS_CAMERA_CUBE, label: 'Camera cube', group: 'fractal', test: true, speed: 1, period: 1e9, offB: 0, fly: { de: FR.cube, near: 0.02, surface: true } },
-  } : {}),
   sponge:     { fs: FS_SPONGE,     label: 'Menger sponge', group: 'fractal', speed: 1, period: 1e9, offB: 0, fly: { de: FR.sponge, lure: FR.spongeLure, near: 0.0025 } },
   mandelbulb: { fs: FS_BULB,       label: 'Mandelbulb',    group: 'fractal', speed: 1, period: 1e9, offB: 0, fly: { de: FR.bulb, near: 0.004 } },
   mandelbox:  { fs: FS_MANDELBOX,  label: 'Mandelbox',     group: 'fractal', speed: 1, period: 1e9, offB: 0, fly: { de: FR.box, near: 0.003 } },
@@ -203,7 +197,7 @@ function droneOf(sc, k) {
   if (!f.drone) f.drone = {};
   let dr = f.drone[k];
   if (!dr || simT - dr.used > 3) {
-    dr = f.drone[k] = f.surface ? makeSurfaceCamera(f.de, k === 'B' ? 2 : 1, {style: currentCameraStyle()}) : makeDrone(f.de, k === 'B' ? 2 : 1, { start: 3.2, roam: 2.2, size: 1.2, far: 0.45, near: f.near, dive: 70, speed: 0.55,
+    dr = f.drone[k] = makeDrone(f.de, k === 'B' ? 2 : 1, { start: 3.2, roam: 2.2, size: 1.2, far: 0.45, near: f.near, dive: 70, speed: 0.55,
                                                            phase0: k === 'B' ? 0.35 : 0, lure: f.lure });
   }
   dr.used = simT;
@@ -285,7 +279,7 @@ const worldOK = (name) => !!SCENES[name] && SCENES[name].state !== 'failed';
 const worldsOK = () => Object.keys(SCENES).filter(worldOK);
 // For Surprise and Autopilot: every 3D world and every fractal this graphics card can draw, each one its own
 // input with the same chance of coming up as Wave, Shape or any other
-const allScenes = () => worldsOK().filter(name => !SCENES[name].test);
+const allScenes = () => worldsOK();
 
 const U = (prog, name) => prog.u[name] || null;
 function set1f(prog, name, v) { const l = U(prog, name); if (l) gl.uniform1f(l, v); }
@@ -981,18 +975,12 @@ const snd = {
   env: { low: 0, mid: 0, high: 0, beat: 0 },
   avg: { low: 0, mid: 0, high: 0 }, peak: { low: 0.1, mid: 0.1, high: 0.1 },
   flux: 0, lastBeat: 0, beats: 0, shakeDir: [1, 0], amount: 60,
-  routes: window.PhosphorMappings.defaults(), cameraStyle: 'glide',
+  routes: window.PhosphorMappings.defaults(),
   map: { kick: true, size: true, spin: true, color: true, warp: true, flash: true },
 };
 // Bounded response: each musical channel has a separate visual role.
 let musicFX = {forward: 0, shimmer: 0, spin: 0, warp: 0, color: 0, hue: 0};
-const CAMERA_STYLES = {glide: 'Glide', runner: 'Runner', crawler: 'Crawler', mix: 'Mix it up'};
 let mappingHue = 0;
-function currentCameraStyle() {
-  if (snd.cameraStyle !== 'mix') return snd.cameraStyle;
-  const count = snd.rhythmSample?.gridBeat ?? Math.floor(simT * 2);
-  return ['glide', 'runner', 'crawler'][((Math.floor(count / 16) % 3) + 3) % 3];
-}
 function updateMusicMappings(dt) {
   const target = snd.analyser
     ? window.PhosphorMappings.evaluate(snd.routes, snd.env, snd.rhythmSample)
@@ -4701,7 +4689,7 @@ function snapshot() {
     A: clone(loops.A.tgt), B: clone(loops.B.tgt),
     mix: { view: mix.tgt.view, xab: mix.tgt.xab, xba: mix.tgt.xba },
     adj: clone(adj),
-    snd: { amount: snd.amount, map: clone(snd.map), mappingVersion: 2, cameraStyle: snd.cameraStyle, routes: clone(snd.routes) },
+    snd: { amount: snd.amount, map: clone(snd.map), mappingVersion: 2, routes: clone(snd.routes) },
     drift,
     text: { str: txt.str, style: txt.style },
   };
@@ -4799,7 +4787,6 @@ function loadPreset(pr, quiet) {
   if (d.snd) {
     if (d.snd.amount != null) snd.amount = d.snd.amount;
     if (d.snd.map) Object.assign(snd.map, d.snd.map);
-    if (Object.hasOwn(CAMERA_STYLES, d.snd.cameraStyle)) snd.cameraStyle = d.snd.cameraStyle;
     if (d.snd.routes) {
       snd.routes = window.PhosphorMappings.sanitize(d.snd.routes);
       if (d.snd.mappingVersion !== 2) {
@@ -5495,6 +5482,47 @@ let shape = 'fill';
 const RENDER_SCALE_KEY = 'phosphor-min-render-scale';
 let renderScale = 1;
 try { const saved = Number(localStorage.getItem(RENDER_SCALE_KEY)); if ([1, 0.75, 0.5].includes(saved)) renderScale = saved; } catch (_) {}
+// Keep the display/feedback at the requested resolution; adapt only costly 3D raymarching.
+const SCENE_DETAIL_KEY = 'phosphor-min-scene-detail';
+let sceneDetail = ['auto', 'smooth', 'full'].includes(lsGet(SCENE_DETAIL_KEY)) ? lsGet(SCENE_DETAIL_KEY) : 'auto';
+const detailController = window.PhosphorQuality.createController();
+let displayFrameMs = 1000 / 60;
+function resetSceneDetail() {
+  detailController.reset(performance.now(), sceneDetail === 'smooth' ? displayFrameMs : 1000 / 60);
+}
+function sceneResolution(sc) {
+  if (sceneDetail === 'full' || window.__phosphorCaptureConfig) return sc.res || 1;
+  const pixels = sceneDetail === 'smooth' ? 1920 * 1080 : 2560 * 1440;
+  const ceiling = Math.min(1, Math.sqrt(pixels / (simW * simH)));
+  return Math.min(sc.res || 1, ceiling * detailController.scale);
+}
+function adaptSceneDetail(now, dt) {
+  if (sceneDetail === 'full' || frozen || document.hidden || window.__phosphorCaptureConfig) return;
+  detailController.update(now, dt * 1000);
+}
+// Measure the browser's refresh cadence while the GPU is idle, rather than inferring
+// refresh from already-slow rendering. Timeout keeps background tabs from blocking startup.
+function calibrateDisplay() {
+  return new Promise(resolve => {
+    const samples = []; let previous, raf, complete = false;
+    const done = () => {
+      if (complete) return; complete = true;
+      clearTimeout(timeout); cancelAnimationFrame(raf);
+      displayFrameMs = window.PhosphorQuality.refreshInterval(samples.slice(3));
+      resetSceneDetail();
+      const note = $('#sceneDetailNote');
+      if (note) note.textContent = `Smooth targets this browser's measured ${Math.round(1000 / displayFrameMs)} Hz refresh, using softer 3D detail and effects. Output resolution stays as selected. Auto favors detail at about 60 FPS.`;
+      resolve();
+    };
+    const tick = t => {
+      if (previous !== undefined) samples.push(t - previous);
+      previous = t;
+      if (samples.length >= 27) done(); else raf = requestAnimationFrame(tick);
+    };
+    const timeout = setTimeout(done, 1200);
+    raf = requestAnimationFrame(tick);
+  });
+}
 const renderLimits = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
 const renderMax = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
 function renderDimensions(width, height) {
@@ -5533,6 +5561,7 @@ function resim(width, height) {
   const oldA = loops.A.rt, oldB = loops.B.rt, oldComp = comp;
   const frontA = oldA[loops.A.front].tex, frontB = oldB[loops.B.front].tex;
   simW = width; simH = height; simAspect = simW / simH;
+  resetSceneDetail();
   loops.A.rt = targets.slice(0, 2); loops.B.rt = targets.slice(2, 4); comp = targets[4];
   copyInto(loops.A.rt[0], frontA);
   copyInto(loops.B.rt[0], frontB);
@@ -5582,8 +5611,13 @@ function fit() {
   [cw, ch] = renderDimensions(cw, ch);
   if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
   clearTimeout(resimTimer);
-  const renderH = window.__phosphorCaptureConfig ? (window.__phosphorCaptureConfig.renderHeight || SIM_H) : ch;
-  const renderW = window.__phosphorCaptureConfig ? Math.round(renderH * aspect) : cw;
+  let renderH = window.__phosphorCaptureConfig ? (window.__phosphorCaptureConfig.renderHeight || SIM_H) : ch;
+  let renderW = window.__phosphorCaptureConfig ? Math.round(renderH * aspect) : cw;
+  if (sceneDetail === 'smooth' && !window.__phosphorCaptureConfig) {
+    const effectsScale = Math.min(1, Math.sqrt(2560 * 1440 / (renderW * renderH)));
+    renderW = Math.max(1, Math.round(renderW * effectsScale));
+    renderH = Math.max(1, Math.round(renderH * effectsScale));
+  }
   if (firstFit) { firstFit = false; resim(renderW, renderH); }
   else resimTimer = setTimeout(() => resim(renderW, renderH), 180);
 }
@@ -6437,8 +6471,24 @@ function computeInk(t, scale, flowPerSec) {
 }
 // The 3D flights are drawn into one of two pictures: the loop's main input's flight into the first,
 // its second input's into the other. How brightly they glow follows the music; see frame().
-const sceneRT = [null, null];
+const sceneRT = { A: [null, null], B: [null, null] };
 let sceneGlow = 1;
+const mercuryDrops = new Float32Array(7 * 4);
+function updateMercury(prog, time, seed) {
+  const t = time * 0.45 + seed, swell = 1 + 0.18 * (sceneGlow - 1);
+  let bound = 0;
+  for (let i = 0; i < 7; i++) {
+    const x = 1.5 * Math.sin(t * (0.53 + 0.11 * i) + i * 1.7);
+    const y = 0.9 * Math.sin(t * (0.71 + 0.07 * i) + i * 2.9);
+    const z = 1.5 * Math.cos(t * (0.47 + 0.13 * i) + i * 0.9);
+    const r = (0.55 + 0.3 * ((i * 0.618) % 1)) * swell;
+    mercuryDrops.set([x, y, z, r], i * 4);
+    bound = Math.max(bound, Math.hypot(x, y, z) + r);
+  }
+  const location = U(prog, 'uDrops[0]'); if (location) gl.uniform4fv(location, mercuryDrops);
+  // Each smooth union can expand the zero surface by at most k/4.
+  set1f(prog, 'uDropRadius', bound + 6 * 0.75 / 4 + 0.01);
+}
 function recoverScene(name) {
   const sc = SCENES[name];
   if (!sc) return;
@@ -6466,11 +6516,11 @@ function render3D(k, name, slot, scale) {
   const sc = SCENES[name];
   if (sc.ext) return drawExt(k, sc, scale);
   if (!sceneReady(sc, true)) { if (sc.state === 'failed') recoverScene(name); return null; }
-  const w = Math.max(2, Math.round(simW * (sc.res || 1))), h = Math.max(2, Math.round(simH * (sc.res || 1)));
-  let rt = sceneRT[slot];
+  const w = Math.max(2, Math.round(simW * sceneResolution(sc))), h = Math.max(2, Math.round(simH * sceneResolution(sc)));
+  let rt = sceneRT[k][slot];
   if (!rt || rt.w !== w || rt.h !== h) {
     if (rt) dropTarget(rt);
-    rt = sceneRT[slot] = makeTarget(w, h);
+    rt = sceneRT[k][slot] = makeTarget(w, h);
     rt.w = w;
     rt.h = h;
   }
@@ -6485,6 +6535,8 @@ function render3D(k, name, slot, scale) {
   set1f(sc.prog, 'uGlow', sceneGlow);
   set2f(sc.prog, 'uMusicColor', musicFX.hue, sndPower() * musicFX.color);
   set1f(sc.prog, 'uSeed', k === 'B' ? 37 : 0);
+  set1f(sc.prog, 'uSceneQuality', sceneDetail === 'smooth' && !window.__phosphorCaptureConfig ? 0 : 1);
+  if (name === 'mercury') updateMercury(sc.prog, simT + (k === 'B' ? 11 : 0), k === 'B' ? 37 : 0);
   if (sc.fly) {
     // The fractals: where this loop's wandering camera is, which way it looks and how it is rolled
     const dr = droneOf(sc, k);
@@ -6924,7 +6976,7 @@ function eyeCollect() {
 // Once a frame while Autopilot runs: collects the last copy, starts trying out the next look when it's nearly
 // due (Check each look), keeps the white-out watch going, and asks for the next copy. The look being tried out
 // gets every other copy; the rest go round the picture on screen and the loops showing in it.
-function eyeTick(now, dt, wA, wB) {
+function eyeTick(now, dt, wA, wB, compositeTex) {
   if (eye.failed) return;
   // With Autopilot off the eye only opens for a moment, to see a look that has just been rated or is being saved
   // (and stays open while a rating is still waiting for its picture, a few seconds at most)
@@ -6949,7 +7001,7 @@ function eyeTick(now, dt, wA, wB) {
     const P = ap.prep, keys = P ? [P.k, 'comp', P.k] : ['comp'];
     for (const k of ['A', 'B']) if ((k === 'A' ? wA : wB) > 0.02 && !(P && P.k === k)) keys.push(k);
     const key = keys[eye.turn++ % keys.length];
-    eyeAsk(key, key === 'comp' ? comp.tex : shownTex(key), now);
+    eyeAsk(key, key === 'comp' ? compositeTex : shownTex(key), now);
   }
 }
 
@@ -6963,6 +7015,7 @@ function frame() {
   }
   const dt = Math.min(0.1, Math.max(0.001, (now - last) / 1000));
   last = now;
+  adaptSceneDetail(now, dt);
   const k = 1 - Math.exp(-dt * 5);
   // Autopilot glides over its Fade time (about 10 seconds unless changed), or fast when a look cuts in on a beat.
   // Pinned settings answer their sliders straight away.
@@ -6994,7 +7047,7 @@ function frame() {
     let surge = 1, glow = 1;
     if (snd.analyser) {
       const a = sndPower();
-      surge += a * (musicFX.forward * 1.8 + (musicFX.travel || 0) * 3);
+      surge += a * (musicFX.forward * 1.8);
       glow += a * musicFX.shimmer * 1.2;
     }
     for (const name of Object.keys(SCENES)) {
@@ -7003,22 +7056,9 @@ function frame() {
       const step = dt * sc.speed * pace * (1 + (surge - 1) * (sc.kick ?? 1));
       sc.z = (sc.z + step) % sc.period;
       // A fractal's wandering cameras fly on, each loop's only while that loop shows it
-      if (sc.fly) {
-        const a = reduceMotion ? sndPower() * 0.35 : sndPower();
-        const style = currentCameraStyle();
-        const motion = {
-          style,
-          speed: a * (musicFX.forward * 0.6 + (musicFX.travel || 0)),
-          surface: a * Math.max(musicFX.surface || 0, style === 'runner' ? musicFX.forward : 0),
-          orbit: a * (musicFX.orbit || 0),
-          turn45: a * (musicFX.turn45 || 0), turn90: a * (musicFX.turn90 || 0),
-          turnToken: musicFX.turnToken ?? null,
-        };
-        // Camera time stays steady; music changes actual velocity rather than speeding its steering clock.
-        for (const k of ['A', 'B']) if (loops[k].tgt.in1 === name || loops[k].tgt.in2 === name) {
-          try { droneOf(sc, k).fly(dt * sc.speed * pace, motion); }
-          catch (_) { recoverScene(name); break; }
-        }
+      if (sc.fly) for (const k of ['A', 'B']) if (loops[k].tgt.in1 === name || loops[k].tgt.in2 === name) {
+        try { droneOf(sc, k).fly(step); }
+        catch (_) { recoverScene(name); break; }
       }
       // Mount Ribbit's hikers walk on, the same way
       if (sc.ext) {
@@ -7043,22 +7083,29 @@ function frame() {
     if (needB) runLoop('B', xab, wB > 0.01 ? brush : null, f);
   }
 
-  gl.bindFramebuffer(gl.FRAMEBUFFER, comp.fbo);
-  gl.viewport(0, 0, simW, simH);
-  gl.useProgram(compProg.p);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, shownTex('A'));
-  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, shownTex('B'));
-  set2f(compProg, 'uSim', simW, simH);
-  set1f(compProg, 'uWA', wA);
-  set1f(compProg, 'uWB', wB);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
-  eyeTick(now, dt, wA, wB);
+  // A single visible loop already is the composite; avoid another full-resolution pass.
+  let compositeTex;
+  if (wA === 1 && wB === 0) compositeTex = shownTex('A');
+  else if (wB === 1 && wA === 0) compositeTex = shownTex('B');
+  else {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, comp.fbo);
+    gl.viewport(0, 0, simW, simH);
+    gl.useProgram(compProg.p);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, shownTex('A'));
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, shownTex('B'));
+    set2f(compProg, 'uSim', simW, simH);
+    set1f(compProg, 'uWA', wA);
+    set1f(compProg, 'uWB', wB);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    compositeTex = comp.tex;
+  }
+  eyeTick(now, dt, wA, wB, compositeTex);
 
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.useProgram(dispProg.p);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, comp.tex);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, compositeTex);
   set2f(dispProg, 'uRes', canvas.width, canvas.height);
   set1f(dispProg, 'uTime', (now - t0) / 1000);
   set1f(dispProg, 'uStatic', staticAmt);
@@ -7103,11 +7150,6 @@ function frame() {
 }
 
 function syncMappingUI() {
-  const fractal = !!SCENES[loops.A.tgt.in1]?.fly;
-  const camera = $('#cameraStyle');
-  if (camera) { camera.value = snd.cameraStyle; camera.disabled = !fractal; }
-  const referenceNote = $('#cameraReferenceNote'); if (referenceNote) referenceNote.hidden = !SCENES[loops.A.tgt.in1]?.test;
-  const cameraNote = $('#cameraStyleNote'); if (cameraNote) cameraNote.hidden = !fractal;
   snd.routes.forEach((route, i) => {
     const row = document.querySelector(`[data-music-route="${i}"]`);
     if (!row) return;
@@ -7117,8 +7159,7 @@ function syncMappingUI() {
     row.querySelector('output').textContent = route.strength + '%';
     slider.disabled = route.effect === 'none';
     for (const choice of row.querySelector('[data-field="effect"]').options) {
-      choice.disabled = (route.source === 'pitch' && !['none', 'color'].includes(choice.value))
-        || (!fractal && ['surface', 'orbit', 'turn45', 'turn90'].includes(choice.value));
+      choice.disabled = route.source === 'pitch' && !['none', 'color'].includes(choice.value);
     }
     const option = row.querySelector('option[value="color"]');
     option.textContent = SCENES[loops.A.tgt.in1]?.fly ? 'Structure color' : 'Scene color';
@@ -7208,7 +7249,7 @@ function setupMinimalUI() {
   const visual = section('02 / Visualizer');
   const label = document.createElement('label'); label.htmlFor = 'sceneSelect'; label.textContent = 'Texture';
   const select = document.createElement('select'); select.id = 'sceneSelect';
-  for (const src of [...allScenes().filter((src) => src !== 'ribbit'), ...['cameraSphere', 'cameraCube'].filter(worldOK)]) {
+  for (const src of allScenes().filter((src) => src !== 'ribbit')) {
     const opt = document.createElement('option'); opt.value = src; opt.textContent = SRC_LABEL[src]; select.appendChild(opt);
   }
   select.addEventListener('change', () => {
@@ -7219,20 +7260,16 @@ function setupMinimalUI() {
   });
   select.addEventListener('change', syncMappingUI);
   visual.append(label, select);
-  const cameraLabel = document.createElement('label'); cameraLabel.htmlFor = 'cameraStyle'; cameraLabel.textContent = 'Camera style';
-  const camera = document.createElement('select'); camera.id = 'cameraStyle';
-  camera.title = 'Camera styles are available for fractals. Camera speed also works in worlds.';
-  for (const [value, text] of Object.entries(CAMERA_STYLES)) {
-    const option = document.createElement('option'); option.value = value; option.textContent = text; camera.appendChild(option);
+  const detailLabel = document.createElement('label'); detailLabel.htmlFor = 'sceneDetail'; detailLabel.textContent = '3D detail';
+  const detail = document.createElement('select'); detail.id = 'sceneDetail';
+  for (const [value, text] of [['auto', 'Auto — balanced'], ['smooth', 'Smooth — prioritize frame rate'], ['full', 'Full — every render pixel']]) {
+    const option = document.createElement('option'); option.value = value; option.textContent = text; detail.appendChild(option);
   }
-  camera.value = snd.cameraStyle;
-  camera.addEventListener('change', () => { snd.cameraStyle = camera.value; saveSession(); });
-  const cameraNote = document.createElement('p'); cameraNote.id = 'cameraStyleNote'; cameraNote.className = 'hint';
-  cameraNote.textContent = 'Runner surges and springs away with the forward pulse. Crawler stays close with smaller steps. Mix switches styles every 16 beats. Add surface ride, orbit, or turns in Music mappings.';
-  const referenceNote = document.createElement('p'); referenceNote.id = 'cameraReferenceNote'; referenceNote.className = 'hint';
-  referenceNote.textContent = 'Camera sphere / cube: Glide shows the whole object; Runner and Crawler ride its surface. Try without music first. Panels show travel and edge crossings.';
-  visual.appendChild(referenceNote);
-  visual.append(cameraLabel, camera, cameraNote);
+  detail.value = sceneDetail;
+  detail.addEventListener('change', () => { sceneDetail = detail.value; resetSceneDetail(); lsSet(SCENE_DETAIL_KEY, sceneDetail); fit(); });
+  const detailNote = document.createElement('p'); detailNote.className = 'hint'; detailNote.id = 'sceneDetailNote';
+  detailNote.textContent = 'Smooth prioritizes frame rate with softer 3D detail and effects. Auto balances detail and motion. Full keeps all render pixels.';
+  visual.append(detailLabel, detail, detailNote);
   const qualityLabel = document.createElement('label'); qualityLabel.htmlFor = 'renderQuality'; qualityLabel.textContent = 'Render resolution';
   const quality = document.createElement('select'); quality.id = 'renderQuality';
   for (const [value, text] of [[1, 'Native (100%)'], [0.75, '75% — faster'], [0.5, '50% — fastest']]) {
@@ -7273,7 +7310,7 @@ Object.assign(mix.cur, mix.tgt);
 setEdit('A');
 // Autopilot's eye is made now, with everything else, so starting Autopilot never waits for it
 eyeSetup();
-requestAnimationFrame(frame);
+calibrateDisplay().then(() => { last = performance.now(); requestAnimationFrame(frame); });
 setupMinimalUI();
 showStart();
 // Available only in the isolated local capture session; ordinary site behavior is unchanged.

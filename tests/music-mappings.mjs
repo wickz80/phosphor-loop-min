@@ -57,11 +57,7 @@ ctx.currentTime=20; rhythm.features.time=20; rhythm.lastAudioTime=20;
 assert.equal(rhythm.read().bpmBeat,0,'expired tempo cannot pulse');
 console.log('PASS: continuous BPM grid, phase slew, kick independence, silence and stale-tempo handling.');
 
-for (const effect of ['travel','surface','orbit','turn45','turn90']) {
-  const routed=evaluate([{source:'bpm',effect,strength:100}],silent,{bpmBeat:.8,gridBeat:12});
-  assert.equal(routed[effect],.8);
-  if(effect.startsWith('turn')) assert.equal(routed.turnToken,12);
-  const capped=evaluate(Array(3).fill({source:'bpm',effect,strength:100}),silent,{bpmBeat:1,gridBeat:12});
-  assert.equal(capped[effect],1);
+for (const effect of ['travel', 'surface', 'orbit', 'turn45', 'turn90']) {
+  assert.equal(Object.hasOwn(context.window.PhosphorMappings.effects, effect), false);
 }
-console.log('PASS: bounded camera mappings and beat tokens for fixed turns.');
+assert.equal(sanitize([{source:'bass',effect:'surface',strength:70}])[0].effect, 'forward');

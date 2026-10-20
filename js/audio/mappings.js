@@ -1,7 +1,7 @@
 // Three bounded routes; pure helpers are shared with the browser regression tests.
 (() => {
   const sources = {bpm: 'BPM beat', kick: 'Kick', percussion: 'Percussion', pitch: 'Dominant pitch', bass: 'Bass', highs: 'Highs', tonal: 'Tonal activity'};
-  const effects = {none: 'None', forward: 'Forward pulse', shimmer: 'Light shimmer', color: 'Structure color', spin: 'Rotation accent', warp: 'Deformation', travel: 'Camera speed', surface: 'Surface ride', orbit: 'Orbit', turn45: 'Turn 45°', turn90: 'Turn 90°'};
+  const effects = {none: 'None', forward: 'Forward pulse', shimmer: 'Light shimmer', color: 'Structure color', spin: 'Rotation accent', warp: 'Deformation'};
   const defaults = () => [
     {source: 'bpm', effect: 'forward', strength: 85},
     {source: 'percussion', effect: 'shimmer', strength: 40},
@@ -17,7 +17,7 @@
   const evaluate = (rows, env, music) => {
     const values = {bpm: music?.bpmBeat ?? 0, kick: env.beat, percussion: env.mid, bass: env.low, highs: env.high,
       tonal: music?.tonal ?? env.mid, pitch: music?.pitch ? music.tonal : 0};
-    const result = {forward: 0, shimmer: 0, spin: 0, warp: 0, color: 0, hue: 0, travel: 0, surface: 0, orbit: 0, turn45: 0, turn90: 0, turnToken: null};
+    const result = {forward: 0, shimmer: 0, spin: 0, warp: 0, color: 0, hue: 0};
     let x = 0, y = 0;
     for (const row of rows) {
       if (row.effect === 'none') continue;
@@ -32,10 +32,9 @@
         result.color += amount;
       } else {
         result[row.effect] += value * weight;
-        if (['turn45', 'turn90'].includes(row.effect) && row.source === 'bpm' && weight > 0 && music?.gridBeat != null) result.turnToken = music.gridBeat;
       }
     }
-    for (const key of ['forward', 'shimmer', 'spin', 'warp', 'color', 'travel', 'surface', 'orbit', 'turn45', 'turn90']) result[key] = Math.min(1, result[key]);
+    for (const key of ['forward', 'shimmer', 'spin', 'warp', 'color']) result[key] = Math.min(1, result[key]);
     result.hue = (Math.atan2(y, x) / (2 * Math.PI) + 1) % 1;
     return result;
   };

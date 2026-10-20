@@ -435,7 +435,7 @@ vec3 source(int id, vec2 p, sampler2D scene) {
   if (id == 24) return seedText(p, uTime);
   // The 3D worlds (Cubes to Nebula, City, and Mount Ribbit at 31) and the fractal flights (25 to 30), each drawn just before this
   // pass (see draw3D) filling the screen
-  if ((id >= 13 && id <= 21) || id == 23 || (id >= 25 && id <= 33)) return uSceneK * texture(scene, clamp(p / vec2(uSim.x / uSim.y, 1.0) + 0.5, 0.0, 1.0)).rgb;
+  if ((id >= 13 && id <= 21) || id == 23 || (id >= 25 && id <= 31)) return uSceneK * texture(scene, clamp(p / vec2(uSim.x / uSim.y, 1.0) + 0.5, 0.0, 1.0)).rgb;
   if (id == 4) return still(uPic, uAspPic, p, 4);
   if (id == 5) return live(uVid0, uVid1, uAspVid, 0.0, p, 5, 0.3);
   if (id == 6) return live(uCam0, uCam1, uAspCam, uFlipCam, p, 6, 0.3);
@@ -451,53 +451,59 @@ void main() {
   vec2 p = (uv - 0.5) * vec2(asp, 1.0);
   vec2 pf = fold(p, uMirror);
 
-  // Where this pixel was one frame ago
-  vec2 q = rot(uSpin) * (pf - uCenter) * exp(-uZoom) + uCenter;
-  if (uJulia > 0.0) q = mix(q, juliaAt(q), uJulia);
-  if (uCrystal > 0.0) q = crystalAt(q);
-  q -= uShift;
-  if (uFlow > 0.0) q -= uFlow * flowAt(q, uTime * 0.6);
-  if (uInkDt > 0.0) q -= uInkDt * inkPush(pf);
-  q += uWarp * vec2(sin(q.y * 7.0 + uTime * 1.1 + sin(q.x * 3.0 + uTime * 0.5)),
-                    cos(q.x * 7.0 - uTime * 0.9 + sin(q.y * 2.0 - uTime * 0.3)));
-  if (uMelt > 0.0) q += meltAt(q, asp);
-  if (uPush > 0.0) q += pushAt(q, asp);
-  if (uLook > 0.0) q = lookAt(q, asp);
-  // Split lines: every other line of pixels slides left, the lines between slide right
   float side = mod(floor(gl_FragCoord.y), 2.0) < 0.5 ? 1.0 : -1.0;
-  q.x += uSplit * side;
-  vec2 st = q / vec2(asp, 1.0) + 0.5;
-  float inside = 1.0;
-  if (uEdge > 0.5) {
-    vec2 m = mod(st, 2.0);
-    st = mix(m, 2.0 - m, step(1.0, m));
-  } else {
-    vec2 b = step(vec2(0.0), st) * step(st, vec2(1.0));
-    inside = b.x * b.y;
+  vec3 fb = vec3(0.0);
+  if (uDecay > 0.0) {
+    // Where this pixel was one frame ago
+    vec2 q = rot(uSpin) * (pf - uCenter) * exp(-uZoom) + uCenter;
+    if (uJulia > 0.0) q = mix(q, juliaAt(q), uJulia);
+    if (uCrystal > 0.0) q = crystalAt(q);
+    q -= uShift;
+    if (uFlow > 0.0) q -= uFlow * flowAt(q, uTime * 0.6);
+    if (uInkDt > 0.0) q -= uInkDt * inkPush(pf);
+    q += uWarp * vec2(sin(q.y * 7.0 + uTime * 1.1 + sin(q.x * 3.0 + uTime * 0.5)),
+                      cos(q.x * 7.0 - uTime * 0.9 + sin(q.y * 2.0 - uTime * 0.3)));
+    if (uMelt > 0.0) q += meltAt(q, asp);
+    if (uPush > 0.0) q += pushAt(q, asp);
+    if (uLook > 0.0) q = lookAt(q, asp);
+    // Split lines: every other line of pixels slides left, the lines between slide right
+    q.x += uSplit * side;
+    vec2 st = q / vec2(asp, 1.0) + 0.5;
+    float inside = 1.0;
+    if (uEdge > 0.5) {
+      vec2 m = mod(st, 2.0);
+      st = mix(m, 2.0 - m, step(1.0, m));
+    } else {
+      vec2 b = step(vec2(0.0), st) * step(st, vec2(1.0));
+      inside = b.x * b.y;
+    }
+    vec2 px = 1.0 / uSim;
+    vec3 c0 = uChroma > 0.0 ? chromaAt(st, asp) : texture(uPrev, st).rgb;
+    vec3 cb = c0;
+    if (uBlur != 0.0 || uRestless > 0.0 || uGrow > 0.0) {
+      cb = 0.25 * (texture(uPrev, st + vec2(px.x, 0.0)).rgb + texture(uPrev, st - vec2(px.x, 0.0)).rgb +
+                   texture(uPrev, st + vec2(0.0, px.y)).rgb + texture(uPrev, st - vec2(0.0, px.y)).rgb);
+    }
+    fb = c0 + (cb - c0) * uBlur;
+    // Restless: only what is changing gets to stay. The picture that lands here is compared with what was here
+    // a frame ago; where they match, it fades away.
+    // Both are softened first, so it follows real movement rather than feeding on its own grain.
+    if (uRestless > 0.0) {
+      vec3 here = 0.25 * (texture(uPrev, uv + vec2(px.x, 0.0)).rgb + texture(uPrev, uv - vec2(px.x, 0.0)).rgb +
+                          texture(uPrev, uv + vec2(0.0, px.y)).rgb + texture(uPrev, uv - vec2(0.0, px.y)).rgb);
+      vec3 d = abs(cb - here);
+      fb *= 1.0 - uRestless + uRestless * smoothstep(0.004, 0.06, luma(d));
+    }
+    if (uGrow > 0.0) fb = growAt(fb, cb, st);
+    // Cross-feed: the other loop's last frame is poured in through this loop's zoom, spin and warp
+    if (uXfeed > 0.0) fb = mix(fb, texture(uOther, st).rgb, uXfeed * 0.5);
+    if (uDye > 0.0) fb = dyeBy(fb, pf, asp);
+    fb = max(hueRot(fb, uHue), 0.0);
+    fb = clamp(fb * uDecay - uFloor, 0.0, 1.0) * inside;
   }
-  vec2 px = 1.0 / uSim;
-  vec3 c0 = uChroma > 0.0 ? chromaAt(st, asp) : texture(uPrev, st).rgb;
-  vec3 cb = 0.25 * (texture(uPrev, st + vec2(px.x, 0.0)).rgb + texture(uPrev, st - vec2(px.x, 0.0)).rgb +
-                    texture(uPrev, st + vec2(0.0, px.y)).rgb + texture(uPrev, st - vec2(0.0, px.y)).rgb);
-  vec3 fb = c0 + (cb - c0) * uBlur;
-  // Restless: only what is changing gets to stay. The picture that lands here is compared with what was here
-  // a frame ago; where they match, it fades away.
-  // Both are softened first, so it follows real movement rather than feeding on its own grain.
-  if (uRestless > 0.0) {
-    vec3 here = 0.25 * (texture(uPrev, uv + vec2(px.x, 0.0)).rgb + texture(uPrev, uv - vec2(px.x, 0.0)).rgb +
-                        texture(uPrev, uv + vec2(0.0, px.y)).rgb + texture(uPrev, uv - vec2(0.0, px.y)).rgb);
-    vec3 d = abs(cb - here);
-    fb *= 1.0 - uRestless + uRestless * smoothstep(0.004, 0.06, luma(d));
-  }
-  if (uGrow > 0.0) fb = growAt(fb, cb, st);
-  // Cross-feed: the other loop's last frame is poured in through this loop's zoom, spin and warp
-  if (uXfeed > 0.0) fb = mix(fb, texture(uOther, st).rgb, uXfeed * 0.5);
-  if (uDye > 0.0) fb = dyeBy(fb, pf, asp);
-  fb = max(hueRot(fb, uHue), 0.0);
-  fb = clamp(fb * uDecay - uFloor, 0.0, 1.0) * inside;
 
   vec2 ps = rot(uMusicSpin) * pf + vec2(uSplitOff * side, 0.0);
-  ps += uMusicWarp * vec2(sin(ps.y * 7.0 + uTime), cos(ps.x * 7.0 - uTime * 0.8));
+  if (uMusicWarp != 0.0) ps += uMusicWarp * vec2(sin(ps.y * 7.0 + uTime), cos(ps.x * 7.0 - uTime * 0.8));
   gSpecA = 0.0;
   vec3 s = source(uIn1, ps, uScene1);
   float specA = gSpecA;
@@ -510,8 +516,10 @@ void main() {
   }
   s *= uGain;
 
-  float bd = sdSeg(pf, uBrush.xy, uBrush.zw);
-  s += uBrushCol * (exp(-bd * bd / (0.011 * 0.011)) + 0.25 * exp(-bd / 0.02)) * uBrushOn;
+  if (uBrushOn > 0.0) {
+    float bd = sdSeg(pf, uBrush.xy, uBrush.zw);
+    s += uBrushCol * (exp(-bd * bd / (0.011 * 0.011)) + 0.25 * exp(-bd / 0.02)) * uBrushOn;
+  }
 
   s = clamp(s, 0.0, 1.0);
   vec3 outc = 1.0 - (1.0 - fb) * (1.0 - s);
@@ -588,16 +596,17 @@ void main() {
   float jolt = length(uShake);
   cuv = (cuv - 0.5) / (1.0 + uPunch + jolt * 0.022) + 0.5 + uShake * 0.008;
   float line = floor(uv.y * uLines);
-  cuv.x += (hash(vec2(line, floor(uTime * 60.0))) - 0.5) * 0.03 * uStatic;
+  if (uStatic > 0.0) cuv.x += (hash(vec2(line, floor(uTime * 60.0))) - 0.5) * 0.03 * uStatic;
   vec2 ca = uShake * 0.01;
-  vec3 col;
-  col.r = texture(uTex, cuv + ca).r;
-  col.g = texture(uTex, cuv).g;
-  col.b = texture(uTex, cuv - ca).b;
+  vec3 col = texture(uTex, cuv).rgb;
+  if (jolt > 0.0) {
+    col.r = texture(uTex, cuv + ca).r;
+    col.b = texture(uTex, cuv - ca).b;
+  }
   if (uHueKick != 0.0) col = max(hueTurn(col, uHueKick), 0.0);
 
   col *= 1.0 + uFlash;
-  col = mix(col, vec3(hash(gl_FragCoord.xy * 0.5 + fract(uTime) * 113.0)), uStatic * 0.9);
+  if (uStatic > 0.0) col = mix(col, vec3(hash(gl_FragCoord.xy * 0.5 + fract(uTime) * 113.0)), uStatic * 0.9);
   vec2 e = smoothstep(vec2(0.0), vec2(0.006), cuv) * smoothstep(vec2(1.0), vec2(0.994), cuv);
   col *= e.x * e.y;
   o = vec4(clamp(col, 0.0, 1.0), 1.0);
@@ -1221,20 +1230,15 @@ uniform float uTravel;   // how far round the camera has circled, as an angle (w
 uniform float uLens;     // how wide the lens is: tan of half the height of the view
 uniform float uGlow;     // how bright the lights are, and how much the blobs swell (the music pushes it up)
 uniform float uSeed;     // loop B watches a different dance
+uniform vec4 uDrops[7];
+uniform float uDropRadius, uSceneQuality;
 out vec4 o;
 float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
 // Seven drops of liquid metal drifting round each other, flowing together where they meet
 float map(vec3 p) {
-  float t = uTime * 0.45 + uSeed;
-  float swell = 1.0 + 0.18 * (uGlow - 1.0);
   float d = 1e5;
   for (int i = 0; i < 7; i++) {
-    float fi = float(i);
-    vec3 c = vec3(1.5 * sin(t * (0.53 + 0.11 * fi) + fi * 1.7),
-                  0.9 * sin(t * (0.71 + 0.07 * fi) + fi * 2.9),
-                  1.5 * cos(t * (0.47 + 0.13 * fi) + fi * 0.9));
-    float r = (0.55 + 0.3 * fract(fi * 0.618)) * swell;
-    d = smin(d, length(p - c) - r, 0.75);
+    d = smin(d, length(p - uDrops[i].xyz) - uDrops[i].w, 0.75);
   }
   return d;
 }
@@ -1267,6 +1271,14 @@ vec3 env(vec3 d) {
   c += hue(floor((az + uTime * 0.05) / seg) * 0.21 + tt) * tube * 2.5 * uGlow;
   return c;
 }
+// Restrict both primary and reflected rays to a conservative bound of the drops.
+vec2 dropRange(vec3 ro, vec3 rd) {
+  float b = dot(ro, rd), c = dot(ro, ro) - uDropRadius * uDropRadius;
+  float h = b * b - c;
+  if (h < 0.0) return vec2(1.0, -1.0);
+  h = sqrt(h);
+  return vec2(-b - h, -b + h);
+}
 void main() {
   vec2 p = (gl_FragCoord.xy - 0.5 * uSim) / uSim.y;
   // Circling slowly round the metal, rising and dipping a little
@@ -1279,10 +1291,13 @@ void main() {
   vec3 rd = normalize(fw + sp.x * rt + sp.y * up);
   const float FLOOR = -2.2;
 
-  float t = 0.0, hit = 0.0;
+  vec2 range = dropRange(ro, rd);
+  float t = max(0.0, range.x), hit = 0.0;
+  float pixelAngle = 2.0 * uLens / uSim.y;
   for (int i = 0; i < 90; i++) {
+    if (t > range.y || (uSceneQuality < 0.5 && i >= 64)) break;
     float d = map(ro + rd * t);
-    if (d < 0.001) { hit = 1.0; break; }
+    if (d < (uSceneQuality < 0.5 ? max(0.001, pixelAngle * t * 0.7) : 0.001)) { hit = 1.0; break; }
     t += d;
     if (t > 20.0) break;
   }
@@ -1302,8 +1317,10 @@ void main() {
     // A black glossy floor mirroring the metal and the lights
     vec3 q = ro + rd * tf;
     vec3 r = vec3(rd.x, -rd.y, rd.z);
-    float tr = 0.02, rh = 0.0;
+    vec2 reflectedRange = dropRange(q, r);
+    float tr = max(0.02, reflectedRange.x), rh = 0.0;
     for (int i = 0; i < 50; i++) {
+      if (tr > min(reflectedRange.y, 12.0) || (uSceneQuality < 0.5 && i >= 28)) break;
       float d = map(q + r * tr);
       if (d < 0.004) { rh = 1.0; break; }
       tr += d;
@@ -1871,6 +1888,7 @@ void main() {
 const MUSIC_MATERIAL = `
 uniform vec2 uMusicColor; // pitch-class hue and bounded blend
 vec3 musicTint(vec3 original) {
+  if (uMusicColor.y <= 0.0) return original;
   vec3 palette = 0.55 + 0.45 * cos(6.2831853 * (uMusicColor.x + vec3(0.0, 0.67, 0.33)));
   float light = dot(original, vec3(0.2126, 0.7152, 0.0722));
   palette *= light / max(0.1, dot(palette, vec3(0.2126, 0.7152, 0.0722)));
@@ -1886,6 +1904,7 @@ uniform float uGlow;     // how bright the lights are (the music pushes it up)
 uniform vec3 uCam;       // where the wandering camera is, which way it looks, and which way is up for it
 uniform vec3 uFwd;
 uniform vec3 uUp;
+uniform float uSceneQuality;
 uniform float uScale;    // how far the nearest surface is: the zoom
 ${MUSIC_MATERIAL}
 out vec4 o;
@@ -1902,8 +1921,9 @@ void main() {
   float t = 0.0, steps = 0.0, hit = 0.0, d = 0.0;
   vec4 tr = vec4(0.0);
   for (int i = 0; i < 110; i++) {
-    d = map(uCam + rd * t, tr);
-    if (d < px * t * 0.6 + uScale * 0.002) { hit = 1.0; break; }
+    if (uSceneQuality < 0.5 && i >= 76) break;
+    d = mapD(uCam + rd * t);
+    if (d < px * t * (uSceneQuality < 0.5 ? 0.9 : 0.6) + uScale * 0.002) { hit = 1.0; break; }
     t += d * 0.9;
     steps += 1.0;
     if (t > far) break;
@@ -1913,12 +1933,14 @@ void main() {
   vec3 col = vec3(0.0), fogC, glowC;
   if (hit > 0.5) {
     vec3 pos = uCam + rd * t;
+    d = map(pos, tr);
     float e = max(px * t * 0.5, uScale * 0.0005);
     vec2 k = vec2(1.0, -1.0);
     vec3 n = normalize(k.xyy * mapD(pos + k.xyy * e) + k.yyx * mapD(pos + k.yyx * e) + k.yxy * mapD(pos + k.yxy * e) + k.xxx * mapD(pos + k.xxx * e));
     // Light gets into the folds less: test a few steps out from the surface
     float ao = 0.0, w = 1.0;
     for (int i = 1; i <= 4; i++) {
+      if (uSceneQuality < 0.5 && i > 2) break;
       float h = t * 0.045 * float(i);
       ao += w * max(h - mapD(pos + n * h) / ${(deq || 1).toFixed(2)}, 0.0) / h;
       w *= 0.65;
@@ -1951,30 +1973,6 @@ ${paint}
 }`;
 }
 
-// Plain reference objects make camera motion and surface contact easy to inspect.
-const FS_CAMERA_SPHERE = fractalFS(`
-float map(vec3 p, out vec4 tr) { tr = vec4(p, 1.0); return length(p) - 1.0; }
-`, `
-    vec2 uv = vec2(atan(pos.z, pos.x) * 2.54648, asin(clamp(pos.y / max(length(pos), 0.001), -1.0, 1.0)) * 2.54648);
-    vec2 seam = abs(fract(uv + 0.5) - 0.5);
-    float line = 1.0 - smoothstep(0.025, 0.055, min(seam.x, seam.y));
-    base = mix(vec3(0.85, 0.3, 0.065), vec3(0.035), line);
-    emit = vec3(0.0); fogC = vec3(0.012, 0.025, 0.04); glowC = vec3(0.08, 0.2, 0.3);
-`);
-const FS_CAMERA_CUBE = fractalFS(`
-float map(vec3 p, out vec4 tr) {
-  tr = vec4(p, 1.0); vec3 q = abs(p) - 1.0;
-  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
-}
-`, `
-    vec3 an = abs(n);
-    vec2 uv = an.x > an.y && an.x > an.z ? pos.yz : an.y > an.z ? pos.xz : pos.xy;
-    float check = mod(floor(uv.x * 4.0) + floor(uv.y * 4.0), 2.0);
-    vec3 face = an.x * vec3(0.85, 0.25, 0.15) + an.y * vec3(0.15, 0.7, 0.35) + an.z * vec3(0.2, 0.4, 0.85);
-    base = face * mix(0.35, 1.0, check);
-    emit = vec3(0.0); fogC = vec3(0.012, 0.025, 0.04); glowC = vec3(0.08, 0.2, 0.3);
-`);
-
 const FS_SPONGE = fractalFS(`
 // Menger sponge: a cube with a cross-shaped hole through it, and the same hole through every smaller cube.
 // tr.x: which size of hole made this bit of wall (0 the biggest), or -1 for the cube's outside.
@@ -2001,15 +1999,22 @@ float map(vec3 p, out vec4 tr) {
 
 const FS_BULB = fractalFS(`
 // Mandelbulb: the Mandelbrot set's rule worked in 3D, to the 8th power. tr: how close the folding came to the middle.
+// Triple angle-doubling gives sin/cos(8a) without atan, acos, or trig in the fold loop.
+vec2 angle8(vec2 sc) {
+  for (int i = 0; i < 3; i++) sc = vec2(2.0 * sc.x * sc.y, sc.y * sc.y - sc.x * sc.x);
+  return sc;
+}
 float map(vec3 p, out vec4 tr) {
   vec3 w = p;
   float m = dot(w, w), dz = 1.0;
   tr = vec4(abs(w), m);
   for (int i = 0; i < 7; i++) {
-    dz = 8.0 * pow(m, 3.5) * dz + 1.0;
-    float r = sqrt(m);
-    float b = 8.0 * acos(clamp(w.y / max(r, 1e-12), -1.0, 1.0)), a = 8.0 * atan(w.x, w.z);
-    w = p + pow(r, 8.0) * vec3(sin(b) * sin(a), cos(b), sin(b) * cos(a));
+    float r = sqrt(m), m2 = m * m;
+    dz = 8.0 * m2 * m * r * dz + 1.0;
+    float h = length(w.xz);
+    vec2 polar = angle8(vec2(h, w.y) / max(r, 1e-12));
+    vec2 azimuth = angle8(w.xz / max(h, 1e-12));
+    w = p + (m2 * m2) * vec3(polar.x * azimuth.x, polar.y, polar.x * azimuth.y);
     m = dot(w, w);
     tr = min(tr, vec4(abs(w), m));
     if (m > 256.0) break;
@@ -2151,5 +2156,5 @@ void main() {
   o = vec4(clamp(c * 0.25, 0.0, 1.0), 1.0);
 }`;
 
-return { FS_CAMERA_SPHERE, FS_CAMERA_CUBE, MUSIC_MATERIAL, FS_COPY, FS_PROBE, FS_EYE, VS, COMMON, FS_FEEDBACK, FS_COMPOSITE, FS_TIMEWARP, FS_DISPLAY, FS_CUBES, FS_HORIZON, FS_CAVERN, FS_BLACKHOLE, FS_AURORA, FS_MERCURY, FS_FRACTAL, FS_NEBULA, FS_CITY, FS_SPONGE, FS_BULB, FS_MANDELBOX, FS_SIERPINSKI, FS_JULIA, FS_KALEIDO };
+return { MUSIC_MATERIAL, FS_COPY, FS_PROBE, FS_EYE, VS, COMMON, FS_FEEDBACK, FS_COMPOSITE, FS_TIMEWARP, FS_DISPLAY, FS_CUBES, FS_HORIZON, FS_CAVERN, FS_BLACKHOLE, FS_AURORA, FS_MERCURY, FS_FRACTAL, FS_NEBULA, FS_CITY, FS_SPONGE, FS_BULB, FS_MANDELBOX, FS_SIERPINSKI, FS_JULIA, FS_KALEIDO };
 })();

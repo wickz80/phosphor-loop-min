@@ -1,0 +1,352 @@
+{
+  "before": {
+    "hardware": {
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)",
+      "timer": true
+    },
+    "results": [
+      {
+        "scene": "mercury",
+        "scale": "1",
+        "pacing": {
+          "fps": 54.48757193583935,
+          "p95": 33.30000000000018
+        },
+        "output": [
+          5372,
+          2460
+        ],
+        "detail": "full",
+        "size": "5372 \u00d7 2460",
+        "frame": {
+          "mean": 18.36101694915254,
+          "p50": 16.699999999999818,
+          "p95": 33.40000000000009,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            5372,
+            2460
+          ],
+          "feedback": [
+            5372,
+            2460
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "mandelbulb",
+        "scale": "1",
+        "pacing": {
+          "fps": 55.05381665223307,
+          "p95": 33.30000000000018
+        },
+        "output": [
+          5372,
+          2460
+        ],
+        "detail": "full",
+        "size": "5372 \u00d7 2460",
+        "frame": {
+          "mean": 21.467796610169497,
+          "p50": 16.699999999999818,
+          "p95": 33.399999999999636,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            5372,
+            2460
+          ],
+          "feedback": [
+            5372,
+            2460
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      }
+    ]
+  },
+  "full": {
+    "hardware": {
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)",
+      "timer": true
+    },
+    "results": [
+      {
+        "scene": "mercury",
+        "scale": "1",
+        "pacing": {
+          "fps": 60.001348344906624,
+          "p95": 16.700000000000273
+        },
+        "output": [
+          5372,
+          2460
+        ],
+        "detail": "full",
+        "target": "Smooth targets this browser's measured 60 Hz refresh, using softer 3D detail and effects. Output resolution stays as selected. Auto favors detail at about 60 FPS.",
+        "size": "5372 \u00d7 2460",
+        "frame": {
+          "mean": 16.664406779661014,
+          "p50": 16.699999999999818,
+          "p95": 16.700000000000728,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            5372,
+            2460
+          ],
+          "feedback": [
+            5372,
+            2460
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "mandelbulb",
+        "scale": "1",
+        "pacing": {
+          "fps": 59.997303491977895,
+          "p95": 16.700000000000728
+        },
+        "output": [
+          5372,
+          2460
+        ],
+        "detail": "full",
+        "target": "Smooth targets this browser's measured 60 Hz refresh, using softer 3D detail and effects. Output resolution stays as selected. Auto favors detail at about 60 FPS.",
+        "size": "5372 \u00d7 2460",
+        "frame": {
+          "mean": 16.66610169491526,
+          "p50": 16.699999999999818,
+          "p95": 16.699999999999818,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            5372,
+            2460
+          ],
+          "feedback": [
+            5372,
+            2460
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      }
+    ]
+  },
+  "smooth": {
+    "hardware": {
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)",
+      "timer": true
+    },
+    "results": [
+      {
+        "scene": "mercury",
+        "scale": "1",
+        "pacing": {
+          "fps": 60.001348344906624,
+          "p95": 16.799999999999727
+        },
+        "output": [
+          5372,
+          2460
+        ],
+        "detail": "smooth",
+        "target": "Smooth targets this browser's measured 60 Hz refresh, using softer 3D detail and effects. Output resolution stays as selected. Auto favors detail at about 60 FPS.",
+        "size": "2837 \u00d7 1299",
+        "frame": {
+          "mean": 16.66610169491525,
+          "p50": 16.699999999999818,
+          "p95": 16.700000000000273,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            2128,
+            974
+          ],
+          "feedback": [
+            2837,
+            1299
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "cubes",
+        "scale": "1",
+        "pacing": {
+          "fps": 60.00539374325783,
+          "p95": 16.700000000000728
+        },
+        "output": [
+          5372,
+          2460
+        ],
+        "detail": "smooth",
+        "target": "Smooth targets this browser's measured 60 Hz refresh, using softer 3D detail and effects. Output resolution stays as selected. Auto favors detail at about 60 FPS.",
+        "size": "2837 \u00d7 1299",
+        "frame": {
+          "mean": 16.66610169491526,
+          "p50": 16.699999999999818,
+          "p95": 16.700000000000728,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            2128,
+            974
+          ],
+          "feedback": [
+            2837,
+            1299
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "sponge",
+        "scale": "1",
+        "pacing": {
+          "fps": 60.00134834490658,
+          "p95": 16.799999999999272
+        },
+        "output": [
+          5372,
+          2460
+        ],
+        "detail": "smooth",
+        "target": "Smooth targets this browser's measured 60 Hz refresh, using softer 3D detail and effects. Output resolution stays as selected. Auto favors detail at about 60 FPS.",
+        "size": "2837 \u00d7 1299",
+        "frame": {
+          "mean": 16.667796610169486,
+          "p50": 16.69999999999891,
+          "p95": 16.799999999999272,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            2128,
+            974
+          ],
+          "feedback": [
+            2837,
+            1299
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      },
+      {
+        "scene": "mandelbulb",
+        "scale": "1",
+        "pacing": {
+          "fps": 60.00539374325787,
+          "p95": 16.799999999999272
+        },
+        "output": [
+          5372,
+          2460
+        ],
+        "detail": "smooth",
+        "target": "Smooth targets this browser's measured 60 Hz refresh, using softer 3D detail and effects. Output resolution stays as selected. Auto favors detail at about 60 FPS.",
+        "size": "2837 \u00d7 1299",
+        "frame": {
+          "mean": 16.66610169491524,
+          "p50": 16.69999999999891,
+          "p95": 16.799999999999272,
+          "n": 59
+        },
+        "passes": {
+          "scene": 60,
+          "feedback": 60,
+          "display": 60
+        },
+        "sizes": {
+          "scene": [
+            2128,
+            974
+          ],
+          "feedback": [
+            2837,
+            1299
+          ],
+          "display": [
+            5372,
+            2460
+          ]
+        },
+        "allocations": 0
+      }
+    ]
+  }
+}

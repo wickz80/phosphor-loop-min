@@ -22,8 +22,19 @@ P toggles Autopilot, L advances a look, and F toggles full screen.
 
 Rendering follows the canvas's displayed dimensions multiplied by device pixel
 ratio, including fullscreen. The top-right readout shows the actual internal pixel
-resolution. Native (100%) is the default; choose 75% or 50% under Visualizer for
-slower GPUs. This preference persists. Resizes preserve the feedback picture and
+resolution. Native (100%) is the default; choose 75% or 50% under Visualizer to reduce
+output pixels. The persistent 3D detail selector offers:
+- Auto: balance detail with about 60 FPS, adapting 3D sampling when frames run long.
+- Smooth: prioritize the browser's measured display refresh, with fewer 3D march/
+  shading samples and reduced internal effects resolution. Output stays at the
+  selected Render resolution; fine detail and trails can look softer.
+- Full: use every render pixel for 3D (Nebula retains its existing half sampling).
+Refresh is measured at startup with rendering idle. Reload after changing display
+refresh rates or moving the tab to a display with a different refresh rate. Browser
+presentation settings can differ from a display's advertised maximum refresh.
+The readout shows the internal effects resolution; in Smooth it may be lower than
+the output canvas resolution. Capture configurations keep their explicit resolution.
+Resizes preserve the feedback picture and
 reallocate after the resize settles; time-warp history has a bounded memory budget.
 
 Android packaging, phone camera pairing, QR codes, and the Android release workflow
@@ -68,24 +79,3 @@ attack-driven effects; a newly selected Kick mapping stays Kick on future reload
 Mapping strength controls cover subtle through pronounced responses. The slider
 fill follows its value, including after restoring or resetting mappings.
 Rendered effect checks: npm run test:music-response (fixed-scene peak vs neutral).
-
-Fractals have Camera style under Visualizer: Glide, Runner, Crawler, or Mix it up.
-Runner accelerates and springs away with the forward pulse. Crawler stays nearer
-surfaces with smaller, quicker steps. Mix cycles styles every 16 tracked beats
-(or roughly 8 seconds without a tempo). Style transitions are smoothed.
-
-Music mappings also offer Camera speed, Surface ride, Orbit, Turn 45°, and Turn 90°.
-These affect actual camera XYZ/velocity. Surface ride pulls toward the surface,
-then pushes outward on release; Orbit follows a surface tangent. Fixed turns
-trigger once per BPM beat (or a rising activity envelope for other sources), with
-strength controlling how quickly the turn completes. Camera speed works in worlds;
-surface interaction, fixed turns, and camera styles are available on fractals.
-Checks: npm run test:camera and npm run test:music-response.
-
-Camera sphere and Camera cube are plain reference scenes at the bottom of Texture.
-They use a separate surface controller: constant clearance, a transported heading,
-and local upright orientation, with no wandering/dive/roll. Glide is an overview
-of the whole object; Runner/Crawler give an on-surface view. Try without audio
-first. Music then changes speed, steering and radial lift/return. These scenes are
-excluded from Autopilot. The fractals still use the earlier exploratory controller
-until this reference behavior is validated. Circuit checks: npm run test:surface-camera.

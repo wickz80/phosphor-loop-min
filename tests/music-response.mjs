@@ -44,6 +44,8 @@ try{
     let i=0;function tick(){if(++i>=n)resolve();else requestAnimationFrame(tick);}requestAnimationFrame(tick);
   }),n);
   await page.goto(`http://127.0.0.1:${server.address().port}`,{waitUntil:'domcontentloaded',timeout:20000});
+  // Keep the scene sampling grid fixed for pixel comparisons.
+  await page.locator('#sceneDetail').selectOption('full');
   await page.locator('#renderQuality').selectOption('0.5');
   await page.locator('#sceneSelect').selectOption('sierpinski');
   await page.locator('#connectAudio').click();
@@ -81,32 +83,6 @@ try{
     const neutral=difference(await pixels());
     assert.ok(neutral<.1,`${effect} must return to neutral, got ${neutral}`);
     console.log(`${effect}: mean pixel change ${diff.toFixed(2)}/255; neutral ${neutral.toFixed(3)}`);
-  }
-  await page.evaluate(()=>{window.__cameraMoving=true;});
-  for(const style of ['runner','crawler']){
-    await page.locator('#cameraStyle').selectOption(style);
-    await frames(3);
-    const before=await page.evaluate(()=>window.__cameraPosition);
-    await frames(120);
-    const after=await page.evaluate(()=>window.__cameraPosition);
-    assert.ok(Math.hypot(...after.map((value,i)=>value-before[i]))>1e-6,style+' moves actual XYZ uniforms');
-    const view=await pixels();
-    const light=view.filter((value,i)=>i%4!==3);
-    assert.ok(light.reduce((a,b)=>Math.max(a,b),0)-light.reduce((a,b)=>Math.min(a,b),255)>30,style+' keeps surface detail visible');
-    await page.locator('#screen').screenshot({path:`/tmp/phosphor-camera-${style}.png`});
-  }
-  await page.evaluate(()=>{window.__cameraMoving=true; window.__referenceDry=true;});
-  for(const scene of ['cameraSphere','cameraCube']){
-    await page.locator('#sceneSelect').selectOption(scene);
-    await page.locator('#cameraStyle').selectOption('glide');
-    await frames(120);
-    await page.locator('#screen').screenshot({path:`/tmp/phosphor-${scene}-overview.png`});
-    await page.locator('#cameraStyle').selectOption('runner');
-    await frames(120);
-    const view=await pixels();
-    const colors=view.filter((v,i)=>i%4!==3);
-    assert.ok(colors.reduce((a,b)=>Math.max(a,b),0)-colors.reduce((a,b)=>Math.min(a,b),255)>30,scene+' has visible geometry');
-    await page.locator('#screen').screenshot({path:`/tmp/phosphor-${scene}-surface.png`});
   }
   assert.deepEqual(errors,[]);
   console.log('PASS: visible maximum deformation, rotation, forward pulse and shimmer; neutral at zero.');

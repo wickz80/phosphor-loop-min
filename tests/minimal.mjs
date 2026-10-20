@@ -4,9 +4,14 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 const root = resolve('.');
+const basePath = process.env.TEST_BASE_PATH || '/';
+assert.ok(basePath.startsWith('/') && basePath.endsWith('/'));
 const server = createServer(async (req, res) => {
   try {
-    const path = resolve(root, '.' + (req.url === '/' ? '/index.html' : req.url.split('?')[0]));
+    const pathname = req.url.split('?')[0];
+    if (!pathname.startsWith(basePath)) throw Error('Outside app path');
+    const local = pathname.slice(basePath.length);
+    const path = resolve(root, local || 'index.html');
     if (!path.startsWith(root + '/')) throw Error('Invalid path');
     let data = await readFile(path);
     res.setHeader('Content-Type', ({'.js':'text/javascript','.css':'text/css','.html':'text/html','.json':'application/json'})[extname(path)] || 'application/octet-stream');
@@ -44,7 +49,7 @@ try {
   const page = await context.newPage(); page.setDefaultTimeout(5000);
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   const frames = n => page.evaluate(n => new Promise(resolve => { let i=0; function tick(){ if (++i >= n) resolve(); else requestAnimationFrame(tick); } requestAnimationFrame(tick); }), n);
-  await page.goto(`http://127.0.0.1:${server.address().port}`, {waitUntil:'domcontentloaded',timeout:20000});
+  await page.goto(`http://127.0.0.1:${server.address().port}${basePath}`, {waitUntil:'domcontentloaded',timeout:20000});
   await page.waitForFunction(() => document.querySelector('#sndStatus').textContent.includes('Click Share audio'));
   await frames(5);
   const checkResolution = async scale => {
@@ -96,8 +101,15 @@ try {
   assert.equal(await page.locator('.minimal-section').count(), 3);
   assert.equal(await page.locator('#tasteGroup').isVisible(), false);
   assert.equal(await page.locator('#showGroup').isVisible(), false);
+  assert.equal(await page.locator('#sceneDetail').inputValue(), 'auto');
+  const outputBeforeSmooth = await page.locator('#screen').evaluate(c => [c.width, c.height]);
+  await page.locator('#sceneDetail').selectOption('smooth');
+  await frames(20);
+  assert.deepEqual(await page.locator('#screen').evaluate(c => [c.width, c.height]), outputBeforeSmooth, 'Smooth preserves selected output dimensions');
+  await page.waitForFunction(() => /measured [0-9]+ Hz/.test(document.querySelector('#sceneDetailNote').textContent));
+  assert.equal(await page.evaluate(() => localStorage.getItem('phosphor-min-scene-detail')), 'smooth');
+  await page.locator('#sceneDetail').selectOption('full');
   assert.equal(await page.locator('#sceneSelect').inputValue(), 'mercury');
-  assert.equal(await page.locator('#cameraStyle').isDisabled(), true);
   assert.deepEqual(await page.evaluate(() => [window.__audioCalls.length, window.__shareCalls.length]), [0, 0]);
   await page.locator('#connectAudio').click();
   await page.waitForFunction(() => document.querySelector('#sndStatus').textContent.includes('Listening to shared audio'));
@@ -120,8 +132,6 @@ try {
   await page.getByLabel('Mapping 1 strength', {exact:true}).evaluate(el => {el.value=37;el.dispatchEvent(new Event('input',{bubbles:true}));});
   assert.equal(await page.getByLabel('Mapping 1 strength', {exact:true}).evaluate(el => el.style.getPropertyValue('--b')), '37%');
   await page.locator('#sceneSelect').selectOption('sierpinski');
-  assert.equal(await page.locator('#cameraStyle').isDisabled(), false);
-  await page.locator('#cameraStyle').selectOption('crawler');
   assert.equal(await page.locator('[data-music-route="2"] option[value="color"]').textContent(), 'Structure color');
   await frames(120);
   await page.screenshot({path:'/tmp/phosphor-mappings-sierpinski.png'});
@@ -143,8 +153,8 @@ try {
     localStorage.setItem(key, JSON.stringify(saved));
   });
   await page.reload({waitUntil:'domcontentloaded',timeout:20000}); await frames(5);
+  assert.equal(await page.locator('#sceneDetail').inputValue(), 'full');
   assert.equal(await page.locator('#renderQuality').inputValue(), '0.75');
-  assert.equal(await page.locator('#cameraStyle').inputValue(), 'crawler');
   await page.locator('#musicMappings summary').click();
   assert.equal(await page.getByLabel('Mapping 1 sound', {exact:true}).inputValue(), 'bass');
   assert.equal(await page.getByLabel('Mapping 2 sound', {exact:true}).inputValue(), 'bpm');

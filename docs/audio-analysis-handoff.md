@@ -4,6 +4,15 @@ Date: 2026-10-18
 Status: first integrated implementation completed on 2026-10-18. Earlier research
 and the original proposed plan are preserved below; see this checkpoint first.
 
+## Camera rollback (2026-10-19)
+
+User requested reverting the camera experiment. Restored the pre-experiment
+wandering controller and forward-pulse timing; removed styles, camera-specific
+mapping effects, and sphere/cube references. BPM, pitch color, and the other
+music mappings remain. Saved reference scenes fall back to existing worlds;
+retired mapping effects sanitize to the corresponding default effect.
+The camera sections below describe historical work, not the current app.
+
 ## Commit/push checkpoint (2026-10-19)
 
 User confirmed the recovered reference scenes look good and requested a commit
