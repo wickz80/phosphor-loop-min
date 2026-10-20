@@ -4,7 +4,16 @@ Production URL: https://wix.fyi/loop/.
 
 ## Infrastructure lives in wix.fyi CDK
 
-`wickz80/wix.fyi/cdk/lib/host-stack.ts` owns all permanent AWS resources:
+The wix.fyi CDK app owns the infrastructure in two stacks:
+
+- `cdk/lib/phosphor-loop-stack.ts` (`PhosphorLoopStack`) owns the app bucket,
+  origin access identity, and GitHub deployment role. Future session storage,
+  APIs, and other Phosphor services belong here.
+- `cdk/lib/host-stack.ts` (`HostStack`) owns the shared domain, distribution,
+  `/loop` routing/cache policy, and the app role's distribution invalidation grant.
+  The website depends on the app stack; the app stack has no dependency back.
+
+Together they provide:
 
 - Private bucket `wix-fyi-phosphor-loop-097029023067`, separate from the personal
   site's `www.wix.fyi` bucket. It is encrypted, blocks public access, requires SSL,
@@ -63,8 +72,8 @@ npm run build
 cd cdk
 npm ci
 npm test -- --runInBand
-npx cdk diff HostStack
-npx cdk deploy HostStack
+npx cdk diff PhosphorLoopStack HostStack
+npx cdk deploy PhosphorLoopStack HostStack
 ```
 
 Use the existing account `097029023067` in `us-east-1`. Adding a GitHub environment
@@ -84,4 +93,4 @@ update. There is no separate one-off IAM bootstrap template for this app.
 The CDK routing tests cover `/loop` redirects, prefix stripping, private origin
 selection, preservation of unrelated website routes, retained/private bucket
 configuration, and the app role's bucket boundary. To roll back the app, revert
-on `main`; infrastructure stays managed by the wix.fyi CDK stack.
+on `main`; infrastructure stays managed by the wix.fyi CDK app.

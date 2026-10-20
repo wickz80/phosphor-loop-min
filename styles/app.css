@@ -751,6 +751,11 @@
     .rec-ind .dot { animation: none; }
   }
 
+/* The HTML starts in the focused layout; never paint the legacy controls.
+   Reveal the monitor after fit() has sized its canvas, avoiding an intrinsic-size flash. */
+.minimal:not(.ui-ready) .bezel { visibility: hidden; }
+.minimal:not(.ui-ready) .screen-msg:not([hidden]) { visibility: visible; }
+
 /* Focused 3D edition */
 .minimal .taste-strip, .minimal #fsTaste, .minimal #sessionBar,
 .minimal #outBtn, .minimal #drift, .minimal #clear { display: none !important; }

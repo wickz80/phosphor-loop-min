@@ -7205,16 +7205,7 @@ function createMusicMappings() {
 
 /* Minimal personal-site controls. Keep the shared renderer's legacy bindings isolated. */
 function setupMinimalUI() {
-  document.body.classList.add('minimal');
   const panel = $('.panel');
-  const legacy = document.createElement('div');
-  legacy.hidden = true;
-  while (panel.firstChild) legacy.appendChild(panel.firstChild);
-  panel.appendChild(legacy);
-  const intro = document.createElement('p');
-  intro.className = 'minimal-intro';
-  intro.textContent = '3D textures, moved by your music.';
-  panel.appendChild(intro);
   const section = (title) => {
     const el = document.createElement('section'); el.className = 'minimal-section';
     const h = document.createElement('h2'); h.textContent = title; el.appendChild(h);
@@ -7312,6 +7303,8 @@ setEdit('A');
 eyeSetup();
 calibrateDisplay().then(() => { last = performance.now(); requestAnimationFrame(frame); });
 setupMinimalUI();
+fit();
+document.body.classList.add('ui-ready');
 showStart();
 // Available only in the isolated local capture session; ordinary site behavior is unchanged.
 if (window.__phosphorCaptureConfig) window.__phosphorCapture = {

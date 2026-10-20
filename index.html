@@ -12,10 +12,10 @@
 <title>phosphor-loop-min</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Michroma&family=VT323&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Michroma&family=VT323&display=optional">
 <link rel="stylesheet" href="styles/app.css?v=smooth-shaders-1">
 </head>
-<body>
+<body class="minimal">
 
 <div class="app">
   <header class="top">
@@ -25,7 +25,7 @@
     </div>
     <div class="top-right">
         <p class="project-credit">Based on <a href="https://nhillson.github.io/phosphor-loop" target="_blank" rel="noopener noreferrer">nhillson/phosphor-loop</a></p>
-      <button class="btn guide-btn" id="guideBtn" aria-haspopup="dialog" aria-controls="guide"><span class="q" aria-hidden="true">?</span>Guide</button>
+      <button class="btn guide-btn" id="guideBtn" hidden aria-haspopup="dialog" aria-controls="guide"><span class="q" aria-hidden="true">?</span>Guide</button>
     </div>
   </header>
 
@@ -55,7 +55,7 @@
             <div class="osd" id="osd" aria-hidden="true"><span class="osd-a"></span><span class="osd-b"></span></div>
             <div class="rec-ind" id="recInd" hidden><span class="dot">●</span> REC <span id="recTime">0:00</span></div>
             <div class="tip" id="fsNote" hidden></div>
-            <div class="tip" id="tip">Drag on the screen to draw light into the loop. New here? Open the Guide.</div>
+            <div class="tip" id="tip" hidden>Drag on the screen to draw light into the loop. New here? Open the Guide.</div>
             <div class="drop" id="drop" hidden>Drop to feed it into the loop</div>
             <div class="screen-msg" id="msg" hidden></div>
             <form class="name-box" id="nameBox" hidden>
@@ -105,6 +105,8 @@
     </section>
 
     <aside class="panel" aria-label="Controls">
+      <p class="minimal-intro">3D textures, moved by your music.</p>
+      <div id="legacyControls" hidden>
       <p class="lede">Two loops, <b>A</b> and <b>B</b>, feed the picture back into themselves, a little zoomed, turned and tinted, sixty times a second. <b>Pick an input</b>, move a slider, or <b>drag on the screen</b> to draw.</p>
       <div class="panel-tools"><button class="linkish" id="foldAll">Collapse all</button><button class="linkish" id="openAll">Expand all</button></div>
 
@@ -683,6 +685,7 @@
 
       <input type="file" id="picFile" accept="image/*" hidden>
       <input type="file" id="vidFile" accept="video/*" hidden>
+      </div>
     </aside>
   </main>
 

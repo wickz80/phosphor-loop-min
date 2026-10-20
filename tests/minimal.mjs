@@ -49,7 +49,32 @@ try {
   const page = await context.newPage(); page.setDefaultTimeout(5000);
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   const frames = n => page.evaluate(n => new Promise(resolve => { let i=0; function tick(){ if (++i >= n) resolve(); else requestAnimationFrame(tick); } requestAnimationFrame(tick); }), n);
-  await page.goto(`http://127.0.0.1:${server.address().port}${basePath}`, {waitUntil:'domcontentloaded',timeout:20000});
+  // Hold the renderer download to inspect what a slow connection paints before JS.
+  let releaseStartup;
+  const startupGate = new Promise(resolve => { releaseStartup = resolve; });
+  await page.route('**/js/app.js?*', async route => { await startupGate; await route.continue(); });
+  const navigation = page.goto(`http://127.0.0.1:${server.address().port}${basePath}`, {waitUntil:'domcontentloaded',timeout:20000});
+  await page.locator('#legacyControls').waitFor({state:'attached'});
+  await frames(2);
+  assert.equal(await page.locator('body').getAttribute('class'), 'minimal');
+  assert.equal(await page.locator('#legacyControls').isVisible(), false);
+  assert.equal(await page.locator('#drift').isVisible(), false);
+  assert.equal(await page.locator('#screen').isVisible(), false);
+  const initialLayout = await page.evaluate(() => {
+    const header = document.querySelector('.top').getBoundingClientRect();
+    const panel = document.querySelector('.panel').getBoundingClientRect();
+    return {headerHeight:header.height, panelX:panel.x, columns:getComputedStyle(document.querySelector('.deck')).gridTemplateColumns};
+  });
+  releaseStartup();
+  await navigation;
+  await page.waitForFunction(() => document.body.classList.contains('ui-ready'));
+  assert.equal(await page.locator('#screen').isVisible(), true);
+  const finalLayout = await page.evaluate(() => {
+    const header = document.querySelector('.top').getBoundingClientRect();
+    const panel = document.querySelector('.panel').getBoundingClientRect();
+    return {headerHeight:header.height, panelX:panel.x, columns:getComputedStyle(document.querySelector('.deck')).gridTemplateColumns};
+  });
+  assert.deepEqual(finalLayout, initialLayout, 'header and sidebar must not change layout when the renderer starts');
   await page.waitForFunction(() => document.querySelector('#sndStatus').textContent.includes('Click Share audio'));
   await frames(5);
   const checkResolution = async scale => {
@@ -204,5 +229,16 @@ try {
   assert.ok(await filePage.locator('#localPreviewNotice').isVisible());
   assert.equal(await filePage.getByRole('link', {name:'Open local preview',exact:true}).getAttribute('href'), 'http://localhost:8000/');
   await filePage.close();
-  console.log('PASS: native feedback resolution, viewport resizing, fullscreen, HiDPI, saved resolution scale, 3D startup, click-to-share audio without microphone access, disconnect, missing audio, cancellation, ended/stale streams, unsupported browser, saved visual defaults, autopilot, responsive layout, no page errors.');
+  const unsupported = await browser.newPage();
+  await unsupported.addInitScript(() => {
+    const getContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function(type, ...args) {
+      return type === 'webgl2' ? null : getContext.call(this, type, ...args);
+    };
+  });
+  await unsupported.goto(`http://127.0.0.1:${server.address().port}${basePath}`, {waitUntil:'domcontentloaded'});
+  await unsupported.locator('#msg').waitFor({state:'visible'});
+  assert.match(await unsupported.locator('#msg').textContent(), /needs WebGL 2/);
+  await unsupported.close();
+  console.log('PASS: stable first paint, visible WebGL errors, native feedback resolution, viewport resizing, fullscreen, HiDPI, saved resolution scale, 3D startup, click-to-share audio without microphone access, disconnect, missing audio, cancellation, ended/stale streams, unsupported browser, saved visual defaults, autopilot, responsive layout, no page errors.');
 } finally { if (browser) await browser.close(); await new Promise(r => server.close(r)); }
