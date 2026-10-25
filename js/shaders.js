@@ -1,13 +1,13 @@
 'use strict';
 window.PhosphorShaders = (() => {
-const { FR } = window.PhosphorFractals;
-const VS = `#version 300 es
+  const { FR } = window.PhosphorFractals;
+  const VS = `#version 300 es
 void main() {
   vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
-const COMMON = `
+  const COMMON = `
 const float TAU = 6.28318531;
 mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -17,7 +17,7 @@ vec3 hsv(float h, float s, float v) {
 }
 `;
 
-const FS_FEEDBACK = `#version 300 es
+  const FS_FEEDBACK = `#version 300 es
 precision highp float;
 uniform sampler2D uPrev, uOther, uPic, uVid0, uVid1, uCam0, uCam1, uScr0, uScr1, uPho0, uPho1, uOtherPrev, uScene1, uScene2, uText;
 uniform vec2 uSim;
@@ -751,7 +751,7 @@ void main() {
   o = vec4(outc, 1.0);
 }`;
 
-const FS_COMPOSITE = `#version 300 es
+  const FS_COMPOSITE = `#version 300 es
 precision highp float;
 uniform sampler2D uA, uB;
 uniform float uWA, uWB;
@@ -764,10 +764,10 @@ void main() {
   o = vec4(1.0 - (1.0 - a) * (1.0 - b), 1.0);
 }`;
 
-// Time warp: each part of a loop's picture comes from a different moment. The loop's recent frames are kept
-// (see twStep) in a stack, newest on top; how far each pixel is from the "now" edge (or the middle) picks how
-// far down the stack it reads, blending between neighbouring frames so the picture never steps.
-const FS_TIMEWARP = `#version 300 es
+  // Time warp: each part of a loop's picture comes from a different moment. The loop's recent frames are kept
+  // (see twStep) in a stack, newest on top; how far each pixel is from the "now" edge (or the middle) picks how
+  // far down the stack it reads, blending between neighbouring frames so the picture never steps.
+  const FS_TIMEWARP = `#version 300 es
 precision highp float;
 precision highp sampler2DArray;
 uniform sampler2D uNow;
@@ -798,7 +798,7 @@ void main() {
   o = vec4(mix(kept(j0, uv), kept(min(j0 + 1.0, uFilled - 1.0), uv), j - j0), 1.0);
 }`;
 
-const FS_DISPLAY = `#version 300 es
+  const FS_DISPLAY = `#version 300 es
 precision highp float;
 uniform sampler2D uTex;
 uniform vec2 uRes;
@@ -850,11 +850,10 @@ void main() {
   o = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
 
-
-// The 3D flights. Each draws its picture in a pass of its own (see draw3D), only while something uses it,
-// so the feedback pass stays as quick as before for every other input.
-// Cubes: a flight down a lane through floating cubes towards a glowing light.
-const FS_CUBES = `#version 300 es
+  // The 3D flights. Each draws its picture in a pass of its own (see draw3D), only while something uses it,
+  // so the feedback pass stays as quick as before for every other input.
+  // Cubes: a flight down a lane through floating cubes towards a glowing light.
+  const FS_CUBES = `#version 300 es
 precision highp float;
 uniform vec2 uSim;
 uniform float uTime;     // seconds; turns and sways the camera
@@ -1024,8 +1023,8 @@ void main() {
   o = vec4(col, 1.0);
 }`;
 
-// Horizon: a low flight along a wet valley floor towards a striped sunset, glowing grid mountains either side.
-const FS_HORIZON = `#version 300 es
+  // Horizon: a low flight along a wet valley floor towards a striped sunset, glowing grid mountains either side.
+  const FS_HORIZON = `#version 300 es
 precision highp float;
 uniform vec2 uSim;
 uniform float uTime;     // seconds; sways and banks the flight
@@ -1156,8 +1155,8 @@ void main() {
   o = vec4(col, 1.0);
 }`;
 
-// Cavern: a flight down a winding lane through an endless coral-like sheet, with light pulsing along its veins.
-const FS_CAVERN = `#version 300 es
+  // Cavern: a flight down a winding lane through an endless coral-like sheet, with light pulsing along its veins.
+  const FS_CAVERN = `#version 300 es
 precision highp float;
 uniform vec2 uSim;
 uniform float uTime;     // seconds; colours drift with it
@@ -1266,8 +1265,8 @@ void main() {
   o = vec4(col, 1.0);
 }`;
 
-// Black hole: circling a black hole whose pull bends light round it, so its glowing disk shows over the top and underneath.
-const FS_BLACKHOLE = `#version 300 es
+  // Black hole: circling a black hole whose pull bends light round it, so its glowing disk shows over the top and underneath.
+  const FS_BLACKHOLE = `#version 300 es
 precision highp float;
 uniform vec2 uSim;
 uniform float uTime;     // seconds; the disk swirls and the view tilts with it
@@ -1367,8 +1366,8 @@ void main() {
   o = vec4(col, 1.0);
 }`;
 
-// Aurora: a slow glide over a frozen lake under curtains of northern lights, mirrored in the ice.
-const FS_AURORA = `#version 300 es
+  // Aurora: a slow glide over a frozen lake under curtains of northern lights, mirrored in the ice.
+  const FS_AURORA = `#version 300 es
 precision highp float;
 uniform vec2 uSim;
 uniform float uTime;     // seconds; the curtains ripple and fold with it
@@ -1459,8 +1458,8 @@ void main() {
   o = vec4(col, 1.0);
 }`;
 
-// Mercury: circling drops of liquid metal that drift, merge and split, mirroring a neon-lit room.
-const FS_MERCURY = `#version 300 es
+  // Mercury: circling drops of liquid metal that drift, merge and split, mirroring a neon-lit room.
+  const FS_MERCURY = `#version 300 es
 precision highp float;
 uniform vec2 uSim;
 uniform float uTime;     // seconds; the blobs drift and merge with it
@@ -1572,8 +1571,8 @@ void main() {
   o = vec4(col, 1.0);
 }`;
 
-// Fractal: a flight down a hall folded out of spheres, where bubbles grow on bubbles, smaller without end.
-const FS_FRACTAL = `#version 300 es
+  // Fractal: a flight down a hall folded out of spheres, where bubbles grow on bubbles, smaller without end.
+  const FS_FRACTAL = `#version 300 es
 precision highp float;
 uniform vec2 uSim;
 uniform float uTime;     // seconds; the colours drift and the view sways with it
@@ -1656,8 +1655,8 @@ void main() {
   o = vec4(col, 1.0);
 }`;
 
-// Nebula: a flight through glowing clouds of gas and dark dust, lit by a nearby star.
-const FS_NEBULA = `#version 300 es
+  // Nebula: a flight through glowing clouds of gas and dark dust, lit by a nearby star.
+  const FS_NEBULA = `#version 300 es
 precision highp float;
 uniform vec2 uSim;
 uniform float uTime;     // seconds; the gas churns and the colours drift with it
@@ -1763,10 +1762,10 @@ void main() {
   o = vec4(col, 1.0);
 }`;
 
-// City: a slow drift sideways along a wet street at night. Shops, lamps, trees and cars in front, rows of
-// buildings behind, each row further back sliding past more slowly, and a skyline under a crescent moon.
-// Every row is a flat layer standing at its own distance, so the view really is 3D and the depth comes free.
-const FS_CITY = `#version 300 es
+  // City: a slow drift sideways along a wet street at night. Shops, lamps, trees and cars in front, rows of
+  // buildings behind, each row further back sliding past more slowly, and a skyline under a crescent moon.
+  // Every row is a flat layer standing at its own distance, so the view really is 3D and the depth comes free.
+  const FS_CITY = `#version 300 es
 precision highp float;
 uniform vec2 uSim;
 uniform float uTime;     // seconds; windows switch on and off, beacons blink, cars drive
@@ -2107,14 +2106,14 @@ void main() {
   o = vec4(col, 1.0);
 }`;
 
-// ---- The fractal flights' pictures ----
-// All six share one way of drawing: rays from the wandering camera step through the fractal's distance
-// (worked out the same way as FR above), and everything that sets how far to look, how fine to draw and how
-// the light falls off is measured against uScale, the camera's distance to the nearest surface. So however
-// deep the camera has dived, the picture is drawn and lit the same way: that is what makes the zoom endless.
-// Each fractal brings its shape (map: distance, plus a note of how the folding went, used for colour) and
-// its colours (paint).
-const MUSIC_MATERIAL = `
+  // ---- The fractal flights' pictures ----
+  // All six share one way of drawing: rays from the wandering camera step through the fractal's distance
+  // (worked out the same way as FR above), and everything that sets how far to look, how fine to draw and how
+  // the light falls off is measured against uScale, the camera's distance to the nearest surface. So however
+  // deep the camera has dived, the picture is drawn and lit the same way: that is what makes the zoom endless.
+  // Each fractal brings its shape (map: distance, plus a note of how the folding went, used for colour) and
+  // its colours (paint).
+  const MUSIC_MATERIAL = `
 uniform vec2 uMusicColor; // pitch-class hue and bounded blend
 vec3 musicTint(vec3 original) {
   if (uMusicColor.y <= 0.0) return original;
@@ -2123,8 +2122,8 @@ vec3 musicTint(vec3 original) {
   palette *= light / max(0.1, dot(palette, vec3(0.2126, 0.7152, 0.0722)));
   return mix(original, palette, clamp(uMusicColor.y, 0.0, 0.85));
 }`;
-function fractalFS(map, paint, deq) {
-  return `#version 300 es
+  function fractalFS(map, paint, deq) {
+    return `#version 300 es
 precision highp float;
 uniform vec2 uSim;
 uniform float uTime;     // seconds; the colours drift with it
@@ -2196,9 +2195,10 @@ ${paint}
   col += glowC * pow(steps / 110.0, 2.0) * 0.55 * uGlow;
   o = vec4(col, 1.0);
 }`;
-}
+  }
 
-const FS_SPONGE = fractalFS(`
+  const FS_SPONGE = fractalFS(
+    `
 // Menger sponge: a cube with a cross-shaped hole through it, and the same hole through every smaller cube.
 // tr.x: which size of hole made this bit of wall (0 the biggest), or -1 for the cube's outside.
 float map(vec3 p, out vec4 tr) {
@@ -2214,15 +2214,18 @@ float map(vec3 p, out vec4 tr) {
     if (c > d) { d = c; tr = vec4(float(m), r); }
   }
   return d;
-}`, `
+}`,
+    `
     // Each size of hole its own colour, slowly shifting; the hole rims glow
     float lv = tr.x;
     base = lv < 0.0 ? vec3(0.5, 0.48, 0.46) : mix(hue(0.58 + lv * 0.17 + uTime * 0.008), vec3(0.85), 0.25);
     emit = vec3(0.0);
     fogC = hue(uTime * 0.01 + 0.62) * 0.045;
-    glowC = hue(uTime * 0.012 + 0.5 + 0.1 * sin(uTime * 0.07));`);
+    glowC = hue(uTime * 0.012 + 0.5 + 0.1 * sin(uTime * 0.07));`
+  );
 
-const FS_BULB = fractalFS(`
+  const FS_BULB = fractalFS(
+    `
 // Mandelbulb: the Mandelbrot set's rule worked in 3D, to the 8th power. tr: how close the folding came to the middle.
 float map(vec3 p, out vec4 tr) {
   vec3 w = p;
@@ -2238,15 +2241,19 @@ float map(vec3 p, out vec4 tr) {
     if (m > 256.0) break;
   }
   return 0.25 * log(m) * sqrt(m) / dz;
-}`, `
+}`,
+    `
     // Mother of pearl: the colour follows how the folding went
     base = mix(hue(0.05 + sqrt(tr.w) * 0.9 + uTime * 0.01), vec3(1.0, 0.9, 0.8), 0.3);
     base *= 0.8 + 0.5 * clamp(tr.x * 1.5, 0.0, 1.0);
     emit = hue(0.55 + uTime * 0.01) * smoothstep(0.08, 0.0, tr.w) * 0.6 * ao;
     fogC = hue(uTime * 0.01 + 0.7) * 0.04;
-    glowC = hue(uTime * 0.012 + 0.9);`, 0.5);
+    glowC = hue(uTime * 0.012 + 0.9);`,
+    0.5
+  );
 
-const FS_MANDELBOX = fractalFS(`
+  const FS_MANDELBOX = fractalFS(
+    `
 // Mandelbox: space folded inside a box and turned inside out through a ball, over and over.
 float map(vec3 p0, out vec4 tr) {
   vec3 p = p0 / ${FR.BOX_K.toFixed(4)}, c = p;
@@ -2263,14 +2270,18 @@ float map(vec3 p0, out vec4 tr) {
     dr = dr * ${Math.abs(FR.BOX_S).toFixed(4)} + 1.0;
   }
   return length(p) / abs(dr) * ${FR.BOX_K.toFixed(4)};
-}`, `
+}`,
+    `
     // Dark gunmetal, with glowing seams where the folds turned inside out
     base = mix(vec3(0.32, 0.34, 0.38), hue(0.08 + uTime * 0.008 + tr.w * 0.15), 0.35);
     emit = hue(0.02 + uTime * 0.01 + tr.x * 0.2) * smoothstep(0.12, 0.0, min(tr.x, min(tr.y, tr.z))) * 0.45 * ao;
     fogC = hue(uTime * 0.01 + 0.08) * 0.035;
-    glowC = hue(uTime * 0.012 + 0.05);`, 0.7);
+    glowC = hue(uTime * 0.012 + 0.05);`,
+    0.7
+  );
 
-const FS_SIERPINSKI = fractalFS(`
+  const FS_SIERPINSKI = fractalFS(
+    `
 // Sierpinski pyramid: a pyramid made of four half-size pyramids, each made of four, and so on.
 float map(vec3 p, out vec4 tr) {
   float s = 1.0;
@@ -2284,14 +2295,17 @@ float map(vec3 p, out vec4 tr) {
     tr = min(tr, vec4(abs(p), dot(p, p)));
   }
   return (max(max(-p.x - p.y - p.z, p.x + p.y - p.z), max(-p.x + p.y + p.z, p.x - p.y + p.z)) - 1.0) * 0.57735027 / s;
-}`, `
+}`,
+    `
     // Gold, with blue light deep in the gaps
     base = mix(vec3(1.0, 0.72, 0.32), hue(0.55 + uTime * 0.01 + tr.w * 0.05), 0.3 * clamp(tr.w * 0.3, 0.0, 1.0));
     emit = vec3(0.0);
     fogC = hue(uTime * 0.01 + 0.6) * 0.045;
-    glowC = hue(uTime * 0.012 + 0.58);`);
+    glowC = hue(uTime * 0.012 + 0.58);`
+  );
 
-const FS_JULIA = fractalFS(`
+  const FS_JULIA = fractalFS(
+    `
 // Julia: a slice through a 4D Julia set (the Mandelbrot set's cousin), grown out of rounded lobes.
 float map(vec3 p, out vec4 tr) {
   vec4 z = vec4(p * ${FR.JK.toFixed(4)}, 0.0);
@@ -2306,50 +2320,72 @@ float map(vec3 p, out vec4 tr) {
     if (mz2 > 16.0) break;
   }
   return 0.25 * sqrt(mz2 / md2) * log(mz2) / ${FR.JK.toFixed(4)};
-}`, `
+}`,
+    `
     // Shimmering, like oil on water
     base = hue(0.35 + sqrt(tr.w) * 1.6 + uTime * 0.012);
     base = mix(base, vec3(0.9), 0.15);
     emit = hue(0.9 + uTime * 0.01) * smoothstep(0.05, 0.0, tr.w) * 0.5 * ao;
     fogC = hue(uTime * 0.01 + 0.8) * 0.04;
-    glowC = hue(uTime * 0.012 + 0.35);`, 0.5);
+    glowC = hue(uTime * 0.012 + 0.35);`,
+    0.5
+  );
 
-const FS_KALEIDO = fractalFS(`
+  const FS_KALEIDO = fractalFS(
+    `
 // Kaleidoscope: a box mirrored eight ways, turned a little, shrunk and mirrored again: faceted crystal.
 float map(vec3 p, out vec4 tr) {
   float s = 1.0;
   tr = vec4(1e5);
   for (int i = 0; i < 4; i++) {
-    p = vec3(dot(vec3(${FR.KR1.slice(0, 3).map((v) => v.toFixed(6))}), p), dot(vec3(${FR.KR1.slice(3, 6).map((v) => v.toFixed(6))}), p), dot(vec3(${FR.KR1.slice(6, 9).map((v) => v.toFixed(6))}), p));
+    p = vec3(dot(vec3(${FR.KR1.slice(0, 3).map((v) =>
+      v.toFixed(6)
+    )}), p), dot(vec3(${FR.KR1.slice(3, 6).map((v) =>
+      v.toFixed(6)
+    )}), p), dot(vec3(${FR.KR1.slice(6, 9).map((v) => v.toFixed(6))}), p));
     p = abs(p);
     if (p.x < p.y) p.xy = p.yx;
     if (p.x < p.z) p.xz = p.zx;
     if (p.y < p.z) p.yz = p.zy;
-    p = vec3(dot(vec3(${FR.KR2.slice(0, 3).map((v) => v.toFixed(6))}), p), dot(vec3(${FR.KR2.slice(3, 6).map((v) => v.toFixed(6))}), p), dot(vec3(${FR.KR2.slice(6, 9).map((v) => v.toFixed(6))}), p));
-    p = vec3(${FR.KS.toFixed(4)} * p.x - ${(FR.KC[0] * (FR.KS - 1)).toFixed(6)}, ${FR.KS.toFixed(4)} * p.y - ${(FR.KC[1] * (FR.KS - 1)).toFixed(6)}, ${FR.KS.toFixed(4)} * p.z);
-    if (p.z > ${(0.5 * FR.KC[2] * (FR.KS - 1)).toFixed(6)}) p.z -= ${(FR.KC[2] * (FR.KS - 1)).toFixed(6)};
+    p = vec3(dot(vec3(${FR.KR2.slice(0, 3).map((v) =>
+      v.toFixed(6)
+    )}), p), dot(vec3(${FR.KR2.slice(3, 6).map((v) =>
+      v.toFixed(6)
+    )}), p), dot(vec3(${FR.KR2.slice(6, 9).map((v) => v.toFixed(6))}), p));
+    p = vec3(${FR.KS.toFixed(4)} * p.x - ${(FR.KC[0] * (FR.KS - 1)).toFixed(
+      6
+    )}, ${FR.KS.toFixed(4)} * p.y - ${(FR.KC[1] * (FR.KS - 1)).toFixed(
+      6
+    )}, ${FR.KS.toFixed(4)} * p.z);
+    if (p.z > ${(0.5 * FR.KC[2] * (FR.KS - 1)).toFixed(6)}) p.z -= ${(
+      FR.KC[2] *
+      (FR.KS - 1)
+    ).toFixed(6)};
     s *= ${FR.KS.toFixed(4)};
     tr = min(tr, vec4(abs(p), dot(p, p)));
   }
   vec3 b = abs(p) - 1.0;
-  return (min(max(b.x, max(b.y, b.z)), 0.0) + length(max(b, 0.0))) / s * ${FR.KSAFE.toFixed(2)};
-}`, `
+  return (min(max(b.x, max(b.y, b.z)), 0.0) + length(max(b, 0.0))) / s * ${FR.KSAFE.toFixed(
+    2
+  )};
+}`,
+    `
     // Ice and glass, catching every colour
     base = mix(vec3(0.5, 0.68, 0.8), hue(0.5 + tr.w * 0.03 + uTime * 0.015), 0.45);
     emit = hue(0.75 + uTime * 0.01 + tr.y * 0.1) * smoothstep(0.15, 0.0, tr.z) * 0.35 * ao;
     fogC = hue(uTime * 0.01 + 0.55) * 0.045;
-    glowC = hue(uTime * 0.015 + 0.75);`, 0.7);
+    glowC = hue(uTime * 0.015 + 0.75);`,
+    0.7
+  );
 
-
-
-const FS_COPY = `#version 300 es
+  const FS_COPY = `#version 300 es
 precision highp float;
 uniform sampler2D uSrc;
 uniform vec2 uSim;
 out vec4 o;
 void main() { o = vec4(texture(uSrc, gl_FragCoord.xy / uSim).rgb, 1.0); }`;
 
-const FS_PROBE = `#version 300 es
+  const FS_PROBE = `#version 300 es
 precision highp float;
 uniform sampler2D uSrc;
 uniform vec2 uOut;
@@ -2362,7 +2398,7 @@ void main() {
   o = vec4(clamp(l / 9.0, 0.0, 1.0), 0.0, 0.0, 1.0);
 }`;
 
-const FS_EYE = `#version 300 es
+  const FS_EYE = `#version 300 es
 precision highp float;
 uniform sampler2D uSrc;
 uniform vec2 uOut;
@@ -2374,5 +2410,31 @@ void main() {
   o = vec4(clamp(c * 0.25, 0.0, 1.0), 1.0);
 }`;
 
-return { MUSIC_MATERIAL, FS_COPY, FS_PROBE, FS_EYE, VS, COMMON, FS_FEEDBACK, FS_COMPOSITE, FS_TIMEWARP, FS_DISPLAY, FS_CUBES, FS_HORIZON, FS_CAVERN, FS_BLACKHOLE, FS_AURORA, FS_MERCURY, FS_FRACTAL, FS_NEBULA, FS_CITY, FS_SPONGE, FS_BULB, FS_MANDELBOX, FS_SIERPINSKI, FS_JULIA, FS_KALEIDO };
+  return {
+    MUSIC_MATERIAL,
+    FS_COPY,
+    FS_PROBE,
+    FS_EYE,
+    VS,
+    COMMON,
+    FS_FEEDBACK,
+    FS_COMPOSITE,
+    FS_TIMEWARP,
+    FS_DISPLAY,
+    FS_CUBES,
+    FS_HORIZON,
+    FS_CAVERN,
+    FS_BLACKHOLE,
+    FS_AURORA,
+    FS_MERCURY,
+    FS_FRACTAL,
+    FS_NEBULA,
+    FS_CITY,
+    FS_SPONGE,
+    FS_BULB,
+    FS_MANDELBOX,
+    FS_SIERPINSKI,
+    FS_JULIA,
+    FS_KALEIDO,
+  };
 })();

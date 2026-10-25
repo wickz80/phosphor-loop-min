@@ -26,17 +26,45 @@
     "perf": "node tools/perf/benchmark.mjs",
     "test:render-quality": "node tests/render-quality.mjs",
     "test:visual-defaults": "node tests/visual-defaults.mjs",
-    "test:lfo": "node tests/lfo.mjs",
-    "test:onset-clock": "node tests/onset-clock.mjs",
-    "test:control-dependencies": "node tests/control-dependencies.mjs",
-    "test:video-grade": "node tests/video-grade.mjs",
+    "test:lfo": "node --experimental-strip-types --test src/lfo-engine.test.ts src/lfo-state.test.ts",
+    "test:onset-clock": "node --experimental-strip-types --test src/audio/beat-clock.test.ts && node tests/onset-clock.mjs",
+    "test:control-dependencies": "node --experimental-strip-types --test src/control-dependencies.test.ts",
+    "test:video-grade": "node --experimental-strip-types --test src/video-grade.test.ts",
     "test:shaders": "node tests/shader-equivalence.mjs",
-    "test:control-automation": "node tests/control-automation.mjs"
+    "test:control-automation": "node tests/control-automation.mjs",
+    "build": "node tools/build.mjs",
+    "build:check": "node tools/build.mjs --check",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.tests.json",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"{js,src,tests,tools}/**/*.{js,mjs,ts}\" \"*.{js,json}\"",
+    "format:check": "prettier --check \"{js,src,tests,tools}/**/*.{js,mjs,ts}\" \"*.{js,json}\"",
+    "test:unit": "node --experimental-strip-types --test src/*.test.ts src/audio/*.test.ts",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run build:check",
+    "test:control-routing": "node --experimental-strip-types --test src/control-routing.test.ts",
+    "test:lfo-state": "node --experimental-strip-types --test src/lfo-state.test.ts",
+    "test:legacy": "node tests/music-mappings.mjs && node tests/visual-defaults.mjs",
+    "test:integration": "node --test tests/deployment.test.mjs && node tests/control-automation.mjs && node tests/onset-clock.mjs",
+    "test": "npm run test:unit && npm run test:legacy && npm run test:integration",
+    "test:browser": "npm run test:minimal",
+    "verify": "npm run check && npm test"
   },
   "dependencies": {
     "essentia.js": "0.1.3",
     "hls.js": "^1.7.3",
     "mp4-muxer": "^5.2.2",
     "playwright-core": "^1.60.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^22.15.21",
+    "eslint": "^9.39.4",
+    "globals": "^17.4.0",
+    "prettier": "2.8.8",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.58.1"
+  },
+  "engines": {
+    "node": ">=22.18.0"
   }
 }

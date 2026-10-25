@@ -1,0 +1,13 @@
+node_modules/
+vendor/
+captures/
+.capture-state/
+package-lock.json
+js/control-dependencies.js
+js/video-grade.js
+js/lfo-engine.js
+js/audio/beat-clock.js
+presets.json
+js/control-routing.js
+js/lfo-state.js
+js/lfo.js

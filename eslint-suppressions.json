@@ -1,0 +1,16 @@
+{
+  "js/app.js": {
+    "no-control-regex": {
+      "count": 1
+    },
+    "no-empty": {
+      "count": 39
+    },
+    "no-unreachable": {
+      "count": 1
+    },
+    "no-unused-vars": {
+      "count": 85
+    }
+  }
+}

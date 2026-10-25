@@ -1,224 +1,409 @@
+// Generated from src/lfo.ts by npm run build. Do not edit directly.
 'use strict';
-window.PhosphorLFO = (() => {
-  const BEATS = [1/8,1/4,1/2,1,2,4,8,16,32,64];
-  const CURVES = {sine:'Sine',linear:'Linear',log:'Log',exp:'Exp'};
-  function sanitize(config, limits) {
-    const clamp = value => Math.min(limits.max,Math.max(limits.min,value));
-    const number = (value,fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
-    return {enabled:config?.enabled === true,
-      x:clamp(number(config?.x,limits.min)),y:clamp(number(config?.y,limits.max)),
-      beats:BEATS.includes(Number(config?.beats)) ? Number(config.beats) : 4,
-      curve:Object.hasOwn(CURVES,config?.curve) ? config.curve : 'sine'};
-  }
-  // N beats is a complete X → Y → X sine cycle, including reversed ranges.
-  function valueAt(config, beat) {
-    const phase = ((beat / config.beats) % 1 + 1) % 1;
-    const triangle=phase<=0.5 ? phase*2 : (1-phase)*2;
-    const amount=config.curve==='linear' ? triangle
-      : config.curve==='log' ? Math.log1p(9*triangle)/Math.log(10)
-      : config.curve==='exp' ? Math.expm1(Math.log(10)*triangle)/9
-      : 0.5-0.5*Math.cos(phase*2*Math.PI);
-    return config.x + (config.y-config.x) * amount;
-  }
-  function createEngine({bindings={},resolve,apply}) {
-    return {bindings,
-      set(key,config) {
-        const target=resolve(key); if(!target)return;
-        return bindings[key]=sanitize(config,target.limits);
-      },
-      tick(beat,frozen=false) {
-        if(frozen || !Number.isFinite(beat))return;
-        for(const [key,raw] of Object.entries(bindings)) {
-          if(!raw?.enabled)continue;
-          const target=resolve(key);if(!target)continue;
-          const config=sanitize(raw,target.limits);
-          const step=target.limits.step || 1;
-          const value=valueAt(config,beat);
-          const snapped=target.limits.min+Math.round((value-target.limits.min)/step)*step;
-          apply(target,Math.min(Math.max(snapped,Math.min(config.x,config.y)),Math.max(config.x,config.y)));
+const PhosphorLFO = (() => {
+  const { BEATS, CURVES, sanitize, valueAt, createEngine } =
+    window.PhosphorLFOEngine;
+  function createUI({
+    root,
+    getScope,
+    getBeat,
+    isFrozen,
+    setValue,
+    fillTrack,
+    onEnable = () => {},
+    isAvailable = (el) => !el.disabled,
+    onReset = () => {},
+  }) {
+    const doc = root.ownerDocument,
+      storageKey = 'phosphor-min-lfo-v1';
+    let saved = {};
+    try {
+      saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+    } catch {
+      // This failure is non-fatal; retain the current state.
+    }
+    const bindings = {};
+    const entries = new Map();
+    const resolve = (key) => {
+      const [scope, id] = key.split(':');
+      const entry = entries.get(id);
+      return entry && (scope === 'global' || scope === 'A' || scope === 'B')
+        ? { ...entry, scope }
+        : null;
+    };
+    const engine = createEngine({
+      bindings,
+      resolve,
+      apply: (entry, value) => {
+        if (!isAvailable(entry.el, entry.scope)) return;
+        setValue(entry.el, value, entry.scope);
+        if (entry.scope === 'global' || entry.scope === getScope(entry.el)) {
+          entry.el.value = String(value);
+          fillTrack(entry.el);
+          if (entry.output)
+            entry.output.value = String(Math.round(value * 100) / 100);
         }
       },
-    };
-  }
-  function createUI({root,getScope,getBeat,isFrozen,setValue,fillTrack,onEnable=()=>{},isAvailable=el=>!el.disabled,onReset=()=>{}}) {
-    const doc=root.ownerDocument, storageKey='phosphor-min-lfo-v1';
-    let saved={};try{saved=JSON.parse(localStorage.getItem(storageKey)||'{}');}catch(_){}
-    const bindings=saved && typeof saved==='object' && !Array.isArray(saved) ? saved : {};
-    const entries=new Map();
-    const resolve=key=>{
-      const [scope,id]=key.split(':');const entry=entries.get(id);
-      return entry && (scope==='global'||scope==='A'||scope==='B') ? {...entry,scope} : null;
-    };
-    const engine=createEngine({bindings,resolve,apply:(entry,value)=>{
-      if(!isAvailable(entry.el,entry.scope))return;
-      setValue(entry.el,value,entry.scope);
-      if(entry.scope==='global'||entry.scope===getScope(entry.el)) {
-        entry.el.value=value;fillTrack(entry.el);
-        if(entry.output)entry.output.value=String(Math.round(value*100)/100);
+    });
+    const save = () => {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(bindings));
+      } catch {
+        // This failure is non-fatal; retain the current state.
       }
-    }});
-    const save=()=>{try{localStorage.setItem(storageKey,JSON.stringify(bindings));}catch(_){}};
+    };
     function refresh() {
-      for(const entry of entries.values()) {
-        const scope=getScope(entry.el),key=scope+':'+entry.id;
-        const config=sanitize(bindings[key],entry.limits);
-        const active=config.enabled;
-        entry.check.checked=active;entry.fields.hidden=!active;
-        entry.box.classList.toggle('lfo-active',active);
-        if(entry.box.classList.contains('slider-lfo-menu'))entry.box.hidden=!active;
-        entry.check.closest('.slider-actions')?.classList.toggle('lfo-active',active);
-        entry.el.classList.toggle('lfo-active-slider',active);
-        entry.beats.value=config.beats;entry.curve.value=config.curve;
-        entry.bounds.hidden=!active;
-        for(const endpoint of ['x','y']) {
-          const button=entry[endpoint],value=config[endpoint];
-          const fraction=(value-entry.limits.min)/(entry.limits.max-entry.limits.min||1);
-          button.style.left=`calc(8px + (100% - 16px) * ${fraction})`;
-          button.setAttribute('aria-valuenow',String(value));
-          button.title=`${endpoint==='x'?'From':'To'}: ${value}. Drag or use arrow keys.`;
-          button.firstElementChild.textContent=String(Math.round(value*100)/100);
+      for (const entry of entries.values()) {
+        const scope = getScope(entry.el),
+          key = scope + ':' + entry.id;
+        const config = sanitize(bindings[key], entry.limits);
+        const active = config.enabled;
+        entry.check.checked = active;
+        entry.fields.hidden = !active;
+        entry.box.classList.toggle('lfo-active', active);
+        if (entry.box.classList.contains('slider-lfo-menu'))
+          entry.box.hidden = !active;
+        entry.check
+          .closest('.slider-actions')
+          ?.classList.toggle('lfo-active', active);
+        entry.el.classList.toggle('lfo-active-slider', active);
+        entry.beats.value = String(config.beats);
+        entry.curve.value = config.curve;
+        entry.bounds.hidden = !active;
+        for (const endpoint of ['x', 'y']) {
+          const button = entry[endpoint],
+            value = config[endpoint];
+          const fraction =
+            (value - entry.limits.min) /
+            (entry.limits.max - entry.limits.min || 1);
+          button.style.left = `calc(8px + (100% - 16px) * ${fraction})`;
+          button.setAttribute('aria-valuenow', String(value));
+          button.title = `${
+            endpoint === 'x' ? 'From' : 'To'
+          }: ${value}. Drag or use arrow keys.`;
+          button.firstElementChild.textContent = String(
+            Math.round(value * 100) / 100
+          );
         }
       }
     }
-    for(const [index,el] of [...root.querySelectorAll('.minimal-section input[type="range"]')].entries()) {
-      const route=el.closest('[data-music-route]');
-      const id=el.id || (route ? 'music-route-'+route.dataset.musicRoute : 'slider-'+index);
-      const limits={min:Number(el.min||0),max:Number(el.max||100),step:el.step==='any'?0.01:Number(el.step||1)};
-      const label=doc.querySelector(`label[for="${el.id}"]`);
-      const name=label?.textContent.trim()||el.getAttribute('aria-label')||id;
-      const box=doc.createElement('div');box.className='lfo-control';
-      const toggle=doc.createElement('label');toggle.className='lfo-toggle';
-      const check=doc.createElement('input');check.type='checkbox';check.setAttribute('aria-label',name+' LFO');
-      toggle.append(check,'LFO');box.appendChild(toggle);
-      const fields=doc.createElement('div');fields.className='lfo-fields';fields.hidden=true;
-      const beatLabel=doc.createElement('label');beatLabel.textContent='N';beatLabel.title='Full cycle in beats';
-      const beats=doc.createElement('select');beats.setAttribute('aria-label',name+' LFO beats');
-      for(const count of BEATS) {
-        const option=doc.createElement('option');option.value=count;option.textContent=count<1?'1/'+Math.round(1/count):String(count);beats.appendChild(option);
+    const actions = PhosphorLFOState.createActions(
+      engine,
+      (key) => {
+        const entry = entries.get(key.split(':')[1]);
+        if (entry) onEnable(entry.el);
+      },
+      () => {
+        save();
+        refresh();
       }
-      beatLabel.appendChild(beats);fields.appendChild(beatLabel);
-      const curve=doc.createElement('select');curve.setAttribute('aria-label',name+' LFO curve');curve.title='Modulation curve';curve.className='lfo-curve';
-      for(const [value,label] of Object.entries(CURVES)) {
-        const option=doc.createElement('option');option.value=value;option.textContent=label;curve.appendChild(option);
+    );
+    for (const [index, el] of [
+      ...root.querySelectorAll('.minimal-section input[type="range"]'),
+    ].entries()) {
+      const route = el.closest('[data-music-route]');
+      const id =
+        el.id ||
+        (route ? 'music-route-' + route.dataset.musicRoute : 'slider-' + index);
+      const limits = {
+        min: Number(el.min || 0),
+        max: Number(el.max || 100),
+        step: el.step === 'any' ? 0.01 : Number(el.step || 1),
+      };
+      const label = doc.querySelector(`label[for="${el.id}"]`);
+      const name =
+        label?.textContent?.trim() || el.getAttribute('aria-label') || id;
+      const box = doc.createElement('div');
+      box.className = 'lfo-control';
+      const toggle = doc.createElement('label');
+      toggle.className = 'lfo-toggle';
+      const check = doc.createElement('input');
+      check.type = 'checkbox';
+      check.setAttribute('aria-label', name + ' LFO');
+      toggle.append(check, 'LFO');
+      box.appendChild(toggle);
+      const fields = doc.createElement('div');
+      fields.className = 'lfo-fields';
+      fields.hidden = true;
+      const beatLabel = doc.createElement('label');
+      beatLabel.textContent = 'N';
+      beatLabel.title = 'Full cycle in beats';
+      const beats = doc.createElement('select');
+      beats.setAttribute('aria-label', name + ' LFO beats');
+      for (const count of BEATS) {
+        const option = doc.createElement('option');
+        option.value = String(count);
+        option.textContent =
+          count < 1 ? '1/' + Math.round(1 / count) : String(count);
+        beats.appendChild(option);
       }
-      const curveLabel=doc.createElement('label');curveLabel.textContent='Scaling';curveLabel.title='Shape of the X to Y to X motion';curveLabel.appendChild(curve);fields.appendChild(curveLabel);
-      const status=doc.createElement('span');status.className='lfo-status';fields.appendChild(status);
+      beatLabel.appendChild(beats);
+      fields.appendChild(beatLabel);
+      const curve = doc.createElement('select');
+      curve.setAttribute('aria-label', name + ' LFO curve');
+      curve.title = 'Modulation curve';
+      curve.className = 'lfo-curve';
+      for (const [value, label] of Object.entries(CURVES)) {
+        const option = doc.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        curve.appendChild(option);
+      }
+      const curveLabel = doc.createElement('label');
+      curveLabel.textContent = 'Scaling';
+      curveLabel.title = 'Shape of the X to Y to X motion';
+      curveLabel.appendChild(curve);
+      fields.appendChild(curveLabel);
+      const status = doc.createElement('span');
+      status.className = 'lfo-status';
+      fields.appendChild(status);
       box.appendChild(fields);
-      const reset=doc.createElement('button');reset.type='button';reset.className='mini-reset slider-reset';reset.textContent='↺';
-      reset.setAttribute('aria-label','Reset '+name);reset.title='Reset';
-      reset.addEventListener('click',()=>{
-        const key=getScope(el)+':'+id;
-        engine.set(key,{...sanitize(bindings[key],limits),enabled:false});save();refresh();onReset(el);
+      const reset = doc.createElement('button');
+      reset.type = 'button';
+      reset.className = 'mini-reset slider-reset';
+      reset.textContent = '↺';
+      reset.setAttribute('aria-label', 'Reset ' + name);
+      reset.title = 'Reset';
+      reset.addEventListener('click', () => {
+        actions.reset(getScope(el) + ':' + id, () => onReset(el));
       });
       box.appendChild(reset);
-      const anchor=el.closest('.music-strength, .vcr-time') || el;
-      anchor.insertAdjacentElement('beforebegin',box);
+      const anchor = el.closest('.music-strength, .vcr-time') || el;
+      anchor.insertAdjacentElement('beforebegin', box);
       // Preserve existing controls and handlers while grouping slider actions.
       {
-        let control=el.closest('.ctl'),head=control?.querySelector('.ctl-head');
-        if(!head) {
-          control=doc.createElement('div');control.className='ctl';
-          box.insertAdjacentElement('beforebegin',control);control.append(box,anchor);
-          head=doc.createElement('div');head.className='ctl-head';
-          const title=doc.createElement('label');title.htmlFor=el.id;title.textContent=name;
-          head.appendChild(title);control.prepend(head);
+        let control = el.closest('.ctl'),
+          head = control?.querySelector('.ctl-head');
+        if (!head) {
+          control = doc.createElement('div');
+          control.className = 'ctl';
+          box.insertAdjacentElement('beforebegin', control);
+          control.append(box, anchor);
+          head = doc.createElement('div');
+          head.className = 'ctl-head';
+          const title = doc.createElement('label');
+          title.htmlFor = el.id;
+          title.textContent = name;
+          head.appendChild(title);
+          control.prepend(head);
         }
-        if(head) {
-          control.classList.add('slider-controls');
-          toggle.lastChild.remove();
-          toggle.title='LFO';check.title='LFO';
-          const resetGlyph=doc.createElement('span');resetGlyph.className='slider-action-glyph';
-          resetGlyph.setAttribute('aria-hidden','true');resetGlyph.textContent=reset.textContent;reset.replaceChildren(resetGlyph);
-          const actions=doc.createElement('div');actions.className='slider-actions';
-          let output=head.querySelector('output');
-          if(!output) { output=doc.createElement('output');output.htmlFor=el.id;output.value=el.value; }
-          head.appendChild(actions);actions.append(reset,toggle);
-          if(output)actions.appendChild(output);
+        if (head) {
+          control?.classList.add('slider-controls');
+          toggle.lastChild?.remove();
+          toggle.title = 'LFO';
+          check.title = 'LFO';
+          const resetGlyph = doc.createElement('span');
+          resetGlyph.className = 'slider-action-glyph';
+          resetGlyph.setAttribute('aria-hidden', 'true');
+          resetGlyph.textContent = reset.textContent;
+          reset.replaceChildren(resetGlyph);
+          const actions = doc.createElement('div');
+          actions.className = 'slider-actions';
+          let output = head.querySelector('output');
+          if (!output) {
+            output = doc.createElement('output');
+            output.htmlFor = el.id;
+            output.value = el.value;
+          }
+          head.appendChild(actions);
+          actions.append(reset, toggle);
+          if (output) actions.appendChild(output);
           // Keep compact readouts aligned; retain the exact value on hover.
-          const compactOutput=()=>{
-            const value=Number(el.value);
-            let text=String(value);
-            if(text.length>3&&Math.abs(value)<1)text=value.toFixed(1).replace(/^0\./,'.').replace(/^-0\./,'-.');
-            if(text.length>3&&Math.abs(value)<100)text=String(Math.round(value));
-            if(text.length>3&&Math.abs(value)>=1000)text=String(Math.round(value/1000))+'k';
-            if(text.length>3)text=text.slice(0,2)+'…';
-            output.title=String(value);output.setAttribute('aria-label',name+': '+value);
-            if(output.textContent!==text)output.textContent=text;
+          const compactOutput = () => {
+            const value = Number(el.value);
+            const text = PhosphorLFOState.formatReadout(value);
+            output.title = String(value);
+            output.setAttribute('aria-label', name + ': ' + value);
+            if (output.textContent !== text) output.textContent = text;
           };
-          new MutationObserver(compactOutput).observe(output,{childList:true,characterData:true,subtree:true});
-          el.addEventListener('input',compactOutput);compactOutput();
+          new MutationObserver(compactOutput).observe(output, {
+            childList: true,
+            characterData: true,
+            subtree: true,
+          });
+          el.addEventListener('input', compactOutput);
+          compactOutput();
           box.classList.add('slider-lfo-menu');
         }
       }
-      const slider=doc.createElement('div');slider.className='lfo-slider';
-      el.insertAdjacentElement('beforebegin',slider);slider.appendChild(el);
-      const bounds=doc.createElement('div');bounds.className='lfo-bounds';bounds.hidden=true;slider.appendChild(bounds);
-      const makeBound=endpoint=>{
-        const button=doc.createElement('button');button.type='button';button.className='lfo-bound lfo-bound-'+endpoint;
-        button.setAttribute('role','slider');button.setAttribute('aria-label',name+' LFO '+(endpoint==='x'?'From':'To'));
-        button.setAttribute('aria-valuemin',String(limits.min));button.setAttribute('aria-valuemax',String(limits.max));
-        const valueLabel=doc.createElement('span');button.appendChild(valueLabel);bounds.appendChild(button);
-        const update=value=>{
-          const key=getScope(el)+':'+id,config=sanitize(bindings[key],limits);
-          const snapped=limits.min+Math.round((value-limits.min)/limits.step)*limits.step;
-          engine.set(key,{...config,[endpoint]:Math.max(limits.min,Math.min(limits.max,snapped))});refresh();
+      const slider = doc.createElement('div');
+      slider.className = 'lfo-slider';
+      el.insertAdjacentElement('beforebegin', slider);
+      slider.appendChild(el);
+      const bounds = doc.createElement('div');
+      bounds.className = 'lfo-bounds';
+      bounds.hidden = true;
+      slider.appendChild(bounds);
+      const makeBound = (endpoint) => {
+        const button = doc.createElement('button');
+        button.type = 'button';
+        button.className = 'lfo-bound lfo-bound-' + endpoint;
+        button.setAttribute('role', 'slider');
+        button.setAttribute(
+          'aria-label',
+          name + ' LFO ' + (endpoint === 'x' ? 'From' : 'To')
+        );
+        button.setAttribute('aria-valuemin', String(limits.min));
+        button.setAttribute('aria-valuemax', String(limits.max));
+        const valueLabel = doc.createElement('span');
+        button.appendChild(valueLabel);
+        bounds.appendChild(button);
+        const update = (value) => {
+          const key = getScope(el) + ':' + id,
+            config = sanitize(bindings[key], limits);
+          const snapped =
+            limits.min +
+            Math.round((value - limits.min) / limits.step) * limits.step;
+          engine.set(key, {
+            ...config,
+            [endpoint]: Math.max(limits.min, Math.min(limits.max, snapped)),
+          });
+          refresh();
         };
-        let pointer=null;
-        const move=event=>{
-          const rect=el.getBoundingClientRect();
-          const fraction=Math.max(0,Math.min(1,(event.clientX-rect.left-8)/Math.max(1,rect.width-16)));
-          update(limits.min+fraction*(limits.max-limits.min));
+        let pointer = null;
+        const move = (event) => {
+          const rect = el.getBoundingClientRect();
+          const fraction = Math.max(
+            0,
+            Math.min(
+              1,
+              (event.clientX - rect.left - 8) / Math.max(1, rect.width - 16)
+            )
+          );
+          update(limits.min + fraction * (limits.max - limits.min));
         };
-        button.addEventListener('pointerdown',event=>{
-          if(event.button!==0)return;
-          event.preventDefault();event.stopPropagation();pointer=event.pointerId;button.setPointerCapture(pointer);button.focus();move(event);
+        button.addEventListener('pointerdown', (event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+          pointer = event.pointerId;
+          button.setPointerCapture(pointer);
+          button.focus();
+          move(event);
         });
-        button.addEventListener('pointermove',event=>{if(event.pointerId===pointer)move(event);});
-        const finish=event=>{if(event.pointerId!==pointer)return;pointer=null;save();};
-        button.addEventListener('pointerup',finish);button.addEventListener('pointercancel',finish);
-        button.addEventListener('keydown',event=>{
-          const direction={ArrowLeft:-1,ArrowDown:-1,ArrowRight:1,ArrowUp:1};
-          if(!(event.key in direction)&&!['Home','End'].includes(event.key))return;
-          event.preventDefault();event.stopPropagation();
-          const config=sanitize(bindings[getScope(el)+':'+id],limits);
-          update(event.key==='Home'?limits.min:event.key==='End'?limits.max:config[endpoint]+direction[event.key]*limits.step*(event.shiftKey?10:1));save();
+        button.addEventListener('pointermove', (event) => {
+          if (event.pointerId === pointer) move(event);
+        });
+        const finish = (event) => {
+          if (event.pointerId !== pointer) return;
+          pointer = null;
+          save();
+        };
+        button.addEventListener('pointerup', finish);
+        button.addEventListener('pointercancel', finish);
+        button.addEventListener('keydown', (event) => {
+          const direction = {
+            ArrowLeft: -1,
+            ArrowDown: -1,
+            ArrowRight: 1,
+            ArrowUp: 1,
+          };
+          if (!(event.key in direction) && !['Home', 'End'].includes(event.key))
+            return;
+          event.preventDefault();
+          event.stopPropagation();
+          const config = sanitize(bindings[getScope(el) + ':' + id], limits);
+          update(
+            event.key === 'Home'
+              ? limits.min
+              : event.key === 'End'
+              ? limits.max
+              : config[endpoint] +
+                direction[event.key] * limits.step * (event.shiftKey ? 10 : 1)
+          );
+          save();
         });
         return button;
       };
-      const x=makeBound('x'),y=makeBound('y');
-      const output=route?.querySelector('output') || el.closest('.ctl')?.querySelector('output');
-      const entry={id,el,limits,box,check,fields,x,y,beats,curve,bounds,status,output};entries.set(id,entry);
-      const commit=()=>{
-        const key=getScope(el)+':'+id;
-        const previous=sanitize(bindings[key],limits);
-        engine.set(key,{...previous,enabled:check.checked,beats:Number(beats.value),curve:curve.value});
-        if(check.checked)onEnable(el);save();refresh();
+      const x = makeBound('x'),
+        y = makeBound('y');
+      const output =
+        route?.querySelector('output') ||
+        el.closest('.ctl')?.querySelector('output');
+      const entry = {
+        id,
+        el,
+        limits,
+        box,
+        check,
+        fields,
+        x,
+        y,
+        beats,
+        curve,
+        bounds,
+        status,
+        output,
+      };
+      entries.set(id, entry);
+      const commit = () => {
+        const key = getScope(el) + ':' + id;
+        const previous = sanitize(bindings[key], limits);
+        actions.commit(key, {
+          ...previous,
+          enabled: check.checked,
+          beats: Number(beats.value),
+          curve: curve.value,
+        });
       };
       // A manual gesture takes control before the app's normal slider handler runs.
       // Otherwise an enabled LFO overwrites the drag on the next animation frame.
-      const release = () => {
-        const key=getScope(el)+':'+id;
-        if(!bindings[key]?.enabled)return;
-        engine.set(key,{...bindings[key],enabled:false});save();refresh();
-      };
-      el.addEventListener('pointerdown',release);
-      el.addEventListener('keydown',event=>{
-        if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(event.key))release();
+      const release = () => actions.release(getScope(el) + ':' + id);
+      el.addEventListener('pointerdown', release);
+      el.addEventListener('keydown', (event) => {
+        if (
+          [
+            'ArrowLeft',
+            'ArrowRight',
+            'ArrowUp',
+            'ArrowDown',
+            'Home',
+            'End',
+            'PageUp',
+            'PageDown',
+          ].includes(event.key)
+        )
+          release();
       });
-      check.addEventListener('change',commit);
-      for(const field of [beats,curve])field.addEventListener('change',commit);
+      check.addEventListener('change', commit);
+      for (const field of [beats, curve])
+        field.addEventListener('change', commit);
     }
+    Object.assign(
+      bindings,
+      PhosphorLFOState.restore(saved, (id) => entries.get(id)?.limits ?? null)
+    );
     refresh();
-    return {refresh,engine,disableWhere(predicate){
-      for(const [key,config]of Object.entries(bindings))if(predicate(key)&&config?.enabled)bindings[key]={...config,enabled:false};
-      save();refresh();
-    },tick(){
-      const beat=getBeat();engine.tick(beat,isFrozen());
-      for(const entry of entries.values())if(entry.check.checked) {
-        const status=entry.el.disabled?'Slider inactive':isFrozen()?'Paused':Number.isFinite(beat)?'BPM synced · X → Y → X':'Waiting for BPM';
-        if(entry.status.textContent!==status) { entry.status.textContent=status; entry.box.title=status; }
-      }
-    }};
+    return {
+      refresh,
+      engine,
+      disableWhere(predicate) {
+        for (const [key, config] of Object.entries(bindings))
+          if (predicate(key) && config?.enabled)
+            bindings[key] = { ...config, enabled: false };
+        save();
+        refresh();
+      },
+      tick() {
+        const beat = getBeat();
+        engine.tick(beat, isFrozen());
+        for (const entry of entries.values())
+          if (entry.check.checked) {
+            const status = entry.el.disabled
+              ? 'Slider inactive'
+              : isFrozen()
+              ? 'Paused'
+              : Number.isFinite(beat)
+              ? 'BPM synced · X → Y → X'
+              : 'Waiting for BPM';
+            if (entry.status.textContent !== status) {
+              entry.status.textContent = status;
+              entry.box.title = status;
+            }
+          }
+      },
+    };
   }
-  return {BEATS,CURVES,sanitize,valueAt,createEngine,createUI};
+  return { BEATS, CURVES, sanitize, valueAt, createEngine, createUI };
 })();
+window.PhosphorLFO = PhosphorLFO;
