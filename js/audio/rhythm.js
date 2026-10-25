@@ -51,6 +51,11 @@
         if (data.type === 'features') {
           this.features = data;
           if (data.rms >= 0.001) this.lastAudioTime = data.time;
+          // Timestamped worklet onsets refine alignment, not BPM. No render-frame polling.
+          const now = this.ctx.currentTime;
+          if (data.kick && data.rms >= 0.001 && this.tempo && now - this.tempo.end < 16) {
+            this.clock.observeOnset(data.lastKick, now);
+          }
         }
         else if (data.type === 'samples' && this.workerReady) {
           if (this.pending >= 16) { this.gap = true; return; }

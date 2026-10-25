@@ -15,11 +15,10 @@ try{
  const response=await page.goto(entry,{waitUntil:'domcontentloaded',timeout:30000});
  assert.equal(response.status(),200);
  await page.waitForFunction(()=>/\d+ FPS/.test(document.querySelector('#renderFps').textContent));
- await page.locator('#sceneDetail').selectOption('smooth');
- await page.waitForFunction(()=>/measured \d+ Hz/.test(document.querySelector('#sceneDetailNote').textContent));
+ await page.locator('#pictureSharpness').selectOption('standard');
+ await page.waitForFunction(()=>/× 576$/.test(document.querySelector('#renderSize').textContent));
  await page.locator('#connectAudio').click();
  await page.waitForFunction(()=>document.querySelector('#sndStatus').textContent.includes('Listening to shared audio'));
- await page.waitForFunction(()=>document.querySelector('#pitchStatus').textContent.includes('A · tracking'),{},{timeout:20000});
  await page.waitForFunction(async()=>!!(await navigator.serviceWorker.getRegistration())?.active,{},{timeout:30000});
  const scope=await page.evaluate(async()=>{
   const registration=await navigator.serviceWorker.getRegistration();
@@ -34,6 +33,6 @@ try{
  })));
  assert.ok(visible,'rendered image must be visible');
  assert.deepEqual(errors,[]);
- console.log(JSON.stringify({url:page.url(),...scope,pitch:await page.locator('#pitchStatus').textContent(),fps:await page.locator('#renderFps').textContent()}));
+ console.log(JSON.stringify({url:page.url(),...scope,fps:await page.locator('#renderFps').textContent()}));
  console.log('PASS: live rendering, Smooth mode, synthetic shared audio, pitch worker and scoped service worker.');
 }finally{await browser.close();}

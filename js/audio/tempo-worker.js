@@ -4,11 +4,11 @@ const engine = new Essentia(EssentiaWASM);
 const rate = 44100, ring = new Float32Array(rate * 12);
 let nextPitch = 2048;
 let written = 0, next = ring.length, sourcePosition = 0, previous = 0, sourceRate = 0;
-postMessage({type: 'ready'});
-self.onmessage = ({data}) => {
+postMessage({ type: 'ready' });
+self.onmessage = ({ data }) => {
   if (data.type === 'reset') { written = 0; next = ring.length; nextPitch = 2048; sourcePosition = 0; previous = 0; return; }
   if (data.type !== 'samples') return;
-  postMessage({type: 'ack'});
+  postMessage({ type: 'ack' });
   const samples = data.samples;
   if (data.rate !== sourceRate) {
     sourceRate = data.rate; written = 0; next = ring.length; nextPitch = 2048; sourcePosition = 0; previous = 0;
@@ -34,7 +34,7 @@ self.onmessage = ({data}) => {
       if (power / frame.length > 0.00001) {
         input = engine.arrayToVector(frame);
         const pitch = engine.PitchYin(input, 2048, true, 1200, 110, rate, 0.15);
-        postMessage({type: 'pitch', hz: pitch.pitch, confidence: pitch.pitchConfidence, time: data.end});
+        postMessage({ type: 'pitch', hz: pitch.pitch, confidence: pitch.pitchConfidence, time: data.end });
       }
     } catch (_) { /* pitch is optional; keep rhythm analysis alive */ }
     finally { input?.delete(); }
@@ -47,18 +47,20 @@ self.onmessage = ({data}) => {
     const v = ring[(written + i) % ring.length]; window[i] = v; energy += v * v;
   }
   if (energy / window.length < 0.000001) {
-    postMessage({type: 'tempo', bpm: 0, confidence: 0, end: data.end, cost: 0}); return;
+    postMessage({ type: 'tempo', bpm: 0, confidence: 0, end: data.end, cost: 0 }); return;
   }
   let vector, result;
   const start = performance.now();
   try {
     vector = engine.arrayToVector(window);
-    result = engine.RhythmExtractor2013(vector, 190, 'multifeature', 60);
+    result = engine.RhythmExtractor2013(vector, 190, 'multifeature', 80);
     const ticks = engine.vectorToArray(result.ticks);
-    postMessage({type: 'tempo', bpm: result.bpm, confidence: result.confidence,
+    postMessage({
+      type: 'tempo', bpm: result.bpm, confidence: result.confidence,
       beatTime: ticks.length ? data.end - window.length / rate + ticks[ticks.length - 1] : null,
-      end: data.end, cost: performance.now() - start});
-  } catch (error) { postMessage({type: 'error', message: error.message}); }
+      end: data.end, cost: performance.now() - start
+    });
+  } catch (error) { postMessage({ type: 'error', message: error.message }); }
   finally {
     vector?.delete();
     if (result) for (const value of Object.values(result)) if (value?.delete) value.delete();

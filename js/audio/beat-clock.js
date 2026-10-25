@@ -1,7 +1,7 @@
 // Continuous audio-time oscillator. Tempo updates steer it without resetting a beat.
 (() => {
   class BeatClock {
-    constructor() { this.time = null; this.position = 0; this.bpm = 0; }
+    constructor() { this.time = null; this.position = 0; this.bpm = 0; this.lastOnset = -Infinity; this.seenOnset = -Infinity; this.onsetCandidate = null; }
     setTempo(bpm, beatTime, now) {
       if (!Number.isFinite(bpm) || bpm <= 0 || !Number.isFinite(beatTime)) return;
       this.advance(now);
@@ -9,7 +9,38 @@
         this.bpm = bpm;
         this.position = (now - beatTime) * bpm / 60;
       }
-      this.targetBpm = bpm; this.anchor = beatTime; this.time = now;
+      this.targetBpm = bpm;
+      // Fresh onset timing wins over the older batch window's phase estimate.
+      if (now - this.lastOnset > 4) this.anchor = beatTime;
+      this.time = now;
+    }
+    observeOnset(onsetTime, now) {
+      if (!this.bpm || !Number.isFinite(onsetTime) || !Number.isFinite(now)
+          || onsetTime <= this.seenOnset || onsetTime > now || now - onsetTime > 0.25) return false;
+      this.seenOnset = onsetTime;
+      this.advance(now);
+      const period = 60 / this.bpm;
+      const positionAtOnset = this.position - (now - onsetTime) / period;
+      const error = ((-positionAtOnset % 1) + 1.5) % 1 - 0.5;
+      const locked = now - this.lastOnset <= 4;
+      if (locked) {
+        // Extra/syncopated hits must not drag a settled clock off its beat grid.
+        if (Math.abs(error) > 0.18 || onsetTime - this.lastOnset < period * 0.75) return false;
+      } else {
+        // Reacquire any initial phase only after three tempo-consistent onsets.
+        const candidate = this.onsetCandidate;
+        if (!candidate || onsetTime - candidate.time > period * 4.1) {
+          this.onsetCandidate = {time:onsetTime,count:1}; return false;
+        }
+        const beats = (onsetTime - candidate.time) / period;
+        if (beats < 0.75 || Math.abs(beats - Math.round(beats)) > 0.1) return false;
+        candidate.time = onsetTime; candidate.count++;
+        if (candidate.count < 3) return false;
+      }
+      this.lastOnset = onsetTime;
+      this.anchor = onsetTime;
+      this.onsetCandidate = null;
+      return true;
     }
     advance(now) {
       if (this.time === null) { this.time = now; return; }
@@ -20,8 +51,11 @@
         this.position += (previousBpm + this.bpm) / 2 / 60 * dt;
         const expected = (now - this.anchor) * this.targetBpm / 60;
         const error = ((expected - this.position) % 1 + 1.5) % 1 - 0.5;
-        // Correct at most 1.5% of a beat per second, rather than jumping phase.
-        this.position += Math.max(-0.015, Math.min(0.015, error / 4)) * dt;
+        // Onsets correct phase promptly but continuously; never reset the beat counter.
+        const onsetLocked = now - this.lastOnset <= 4;
+        const maxSlew = onsetLocked ? 0.35 : 0.015;
+        const settle = onsetLocked ? 0.2 : 4;
+        this.position += Math.max(-maxSlew, Math.min(maxSlew, error / settle)) * dt;
       }
       this.time = now;
     }

@@ -1,0 +1,4 @@
+{
+  "finding": "Current LFO apply callback has no source-adjustment branch: adj-video-bright=70 leaves model brightness=0. This confirms a routing gap, not a rendering-performance claim.",
+  "actualModelBrightness": 0
+}

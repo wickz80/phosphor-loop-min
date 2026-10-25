@@ -45,8 +45,7 @@ try{
   }),n);
   await page.goto(`http://127.0.0.1:${server.address().port}`,{waitUntil:'domcontentloaded',timeout:20000});
   // Keep the scene sampling grid fixed for pixel comparisons.
-  await page.locator('#sceneDetail').selectOption('full');
-  await page.locator('#renderQuality').selectOption('0.5');
+  await page.locator('#pictureSharpness').selectOption('standard');
   await page.locator('#sceneSelect').selectOption('sierpinski');
   await page.locator('#connectAudio').click();
   await page.waitForFunction(()=>document.querySelector('#sndStatus').textContent.includes('Listening to shared audio'));

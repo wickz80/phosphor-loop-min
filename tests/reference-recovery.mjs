@@ -21,7 +21,7 @@ try{
     await page.goto(`http://127.0.0.1:${server.address().port}`,{waitUntil:'domcontentloaded',timeout:20000});
     const frames=n=>page.evaluate(n=>new Promise(resolve=>{let i=0;function tick(){if(++i>=n)resolve();else requestAnimationFrame(tick);}requestAnimationFrame(tick);}),n);
     await frames(10);
-    await page.locator('#renderQuality').selectOption('0.5');
+    await page.locator('#pictureSharpness').selectOption('standard');
     assert.equal(await page.locator('#sceneSelect option[value="cameraSphere"]').count(),0);
     assert.equal(await page.locator('#cameraStyle').count(),0);
     assert.equal(await page.locator('#sceneSelect').inputValue(),'mercury','saved retired scene falls back');

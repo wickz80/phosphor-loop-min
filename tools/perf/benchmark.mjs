@@ -33,25 +33,24 @@ try{
   };
  });
  await page.goto(`http://127.0.0.1:${server.address().port}`,{waitUntil:'domcontentloaded'});
- if(process.env.PERF_DETAIL && await page.locator('#sceneDetail').count())await page.locator('#sceneDetail').selectOption(process.env.PERF_DETAIL);
  const hardware=await page.evaluate(()=>{const gl=document.querySelector('canvas').getContext('webgl2'),ext=gl.getExtension('WEBGL_debug_renderer_info');return {renderer:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER),timer:!!gl.getExtension('EXT_disjoint_timer_query_webgl2')};});
  console.log(JSON.stringify(hardware));
- for(const scene of (process.env.PERF_MIX?'crossfade':process.env.PERF_SCENES||'mercury,cubes,sponge,mandelbulb').split(','))for(const scale of (process.env.PERF_SCALES||'1,0.5').split(',')){
-  if(!process.env.PERF_MIX)await page.locator('#sceneSelect').selectOption(scene);await page.locator('#renderQuality').selectOption(scale);
-  await page.waitForTimeout(1200);
+ for(const scene of (process.env.PERF_MIX?'crossfade':process.env.PERF_SCENES||'mercury,cubes,sponge,mandelbulb').split(','))for(const sharpness of (process.env.PERF_SHARPNESS||'standard,full').split(',')){
+  if(!process.env.PERF_MIX)await page.locator('#sceneSelect').selectOption(scene);await page.locator('#pictureSharpness').selectOption(sharpness);
+  await page.evaluate(()=>new Promise(resolve=>{let n=0;function tick(){if(++n>=30)resolve();else requestAnimationFrame(tick);}requestAnimationFrame(tick);}));
   const pacing=await page.evaluate(async()=>{const a=[];let last;await new Promise(resolve=>{let n=0;function tick(t){if(last)a.push(t-last);last=t;if(++n<90)requestAnimationFrame(tick);else resolve();}requestAnimationFrame(tick);});a.sort((a,b)=>a-b);return {fps:1000/(a.reduce((s,v)=>s+v,0)/a.length),p95:a[Math.floor(a.length*.95)]};});
   const sample=await page.evaluate(async()=>{
    const intervals=[];let prev;window.__passes={};window.__sizes={};window.__allocations=0;window.__profile=true;
    await new Promise(resolve=>{let n=0;function tick(t){if(prev)intervals.push(t-prev);prev=t;if(++n<60)requestAnimationFrame(tick);else resolve();}requestAnimationFrame(tick);});
    window.__profile=false;
    const stats=a=>{const b=a.slice().sort((a,b)=>a-b);return {mean:a.reduce((s,v)=>s+v,0)/a.length,p50:b[Math.floor(b.length*.5)],p95:b[Math.floor(b.length*.95)],n:a.length};};
-   return {output:[document.querySelector('#screen').width,document.querySelector('#screen').height],detail:document.querySelector('#sceneDetail').value,target:document.querySelector('#sceneDetailNote')?.textContent,size:document.querySelector('#renderSize').textContent,frame:stats(intervals),passes:window.__passes,sizes:window.__sizes,allocations:window.__allocations};
+   return {output:[document.querySelector('#screen').width,document.querySelector('#screen').height],sharpness:document.querySelector('#pictureSharpness').value,target:document.querySelector('#sharpNote')?.textContent,size:document.querySelector('#renderSize').textContent,frame:stats(intervals),passes:window.__passes,sizes:window.__sizes,allocations:window.__allocations};
   });
-  if(process.env.PERF_MIX && process.env.PERF_DETAIL==='full' && !process.env.PERF_BASELINE_DIR) {
+  if(process.env.PERF_MIX && sharpness==='full' && !process.env.PERF_BASELINE_DIR) {
    assert.equal(sample.allocations,0,'settled mixed-resolution crossfade must reuse its render targets');
    assert.ok(sample.passes.composite>0,'both visible loops must be composited');
   }
-  const row={scene,scale,pacing,...sample};results.push(row);console.log(JSON.stringify(row));
+  const row={scene,sharpness,pacing,...sample};results.push(row);console.log(JSON.stringify(row));
  }
  if(errors.length)throw Error(errors.join('\n'));
  if(process.argv[2])await writeFile(process.argv[2],JSON.stringify({hardware,results},null,2)+'\n');

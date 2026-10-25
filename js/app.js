@@ -6,9 +6,10 @@ const { clamp, rnd, pick, hsv, foldJS, stamp, randId, loadScript } = window.Phos
 const { addWebmDuration, standardMp4 } = window.PhosphorRecording;
 
 /* ================= constants ================= */
-// Small startup buffers are replaced with the canvas’s physical pixel size on first layout.
+// Startup buffers are resized to the selected Picture sharpness on first layout.
 const SIM_H = 576;
 let simW = 768, simH = window.__phosphorCaptureConfig?.renderHeight || SIM_H, simAspect = simW / simH;
+let lfoUI = null, controlDependencies = null;
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -24,18 +25,19 @@ const swOK = !inArtifact && 'serviceWorker' in navigator &&
   (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
 if (swOK) navigator.serviceWorker.register('sw.js').catch(() => {});
 
-const SRC_ID = { wave: 0, shape: 1, bars: 2, sparks: 3, picture: 4, video: 5, camera: 6, screen: 7, phone: 8, none: 9, loop: 10, ink: 11, cubes: 13, horizon: 14, cavern: 15,
+const SRC_ID = { wave: 0, shape: 1, bars: 2, sparks: 3, picture: 4, video: 5, camera: 6, screen: 7, phone: 8, none: 9, loop: 10, ink: 11, patchwork: 12, cubes: 13, horizon: 14, cavern: 15,
                  blackhole: 16, aurora: 17, mercury: 18, fractal: 19, nebula: 21, spectro: 22, city: 23, text: 24,
                  sponge: 25, mandelbulb: 26, mandelbox: 27, sierpinski: 28, julia3d: 29, kaleido: 30, ribbit: 31 };
-const SRC_LABEL = { wave: 'Wave', shape: 'Shape', bars: 'Bars', sparks: 'Sparks', ink: 'Ink', text: 'Text', cubes: 'Cubes', horizon: 'Horizon', cavern: 'Cavern', spectro: 'Spectrograph', city: 'City',
+const SRC_LABEL = { wave: 'Wave', shape: 'Shape', bars: 'Bars', sparks: 'Sparks', ink: 'Ink', patchwork: 'Patchwork', text: 'Text', cubes: 'Cubes', horizon: 'Horizon', cavern: 'Cavern', spectro: 'Spectrograph', city: 'City',
                     blackhole: 'Black hole', aurora: 'Aurora', mercury: 'Mercury', fractal: 'Fractal', nebula: 'Nebula', ribbit: 'Mount Ribbit',
                     sponge: 'Menger sponge', mandelbulb: 'Mandelbulb', mandelbox: 'Mandelbox', sierpinski: 'Sierpinski', julia3d: 'Julia', kaleido: 'Kaleidoscope', picture: 'Picture', video: 'Video', camera: 'Camera', screen: 'Screen', phone: 'Phone', none: 'Nothing', loop: 'Other loop' };
 const LIVE = ['video', 'camera', 'screen', 'phone', 'loop'];   // inputs that can use Only movement
 const DEVICE = ['camera', 'screen', 'phone'];
+const supportedInput = (src) => Object.hasOwn(SRC_ID, src) && !['phone', 'ribbit'].includes(src);
 
 function loopDefaults() {
-  return { in1: 'wave', in2: 'none', blend: 50, size: 100, motion: false, form: 3, specRound: false,
-           zoom: 0, spin: 0, trails: 88, color: 10, warp: 0, flow: 0, melt: 0, push: 0, dye: 0, split: 0, mirror: 0, blur: 0, edge: 0, shiftX: 0, shiftY: 0, gain: 1,
+  return { textureLook: null, in1: 'wave', in2: 'none', blend: 50, size: 100, motion: false, form: 3, specRound: false,
+           zoom: 0, spin: 0, trails: 0, color: 10, warp: 0, flow: 0, melt: 0, push: 0, dye: 0, split: 0, mirror: 0, blur: 0, edge: 0, shiftX: 0, shiftY: 0, gain: 1,
            grow: 0, growSize: 1, time: 0, timeShape: 0,
            lookup: 0, chase: 0, breathe: 0, chroma: 0, restless: 0, julia: 0, crystal: 0 };
 }
@@ -64,6 +66,7 @@ const STARTERS = [
     B: { in1: 'sparks', zoom: 50, spin: -40, trails: 86, color: 18, warp: 30 },
     xab: 70, xba: 45, view: 35 },
   { name: 'Ink', A: { in1: 'ink', size: 70, zoom: 0, spin: 0, trails: 100, color: 3, flow: 75, blur: 0.03 } },
+  { name: 'Patchwork', A: { in1: 'patchwork', size: 100, zoom: 0, spin: 0, trails: 0, color: 0, blur: 0 } },
   { name: 'Cubes', A: { in1: 'cubes', size: 100, zoom: 0, spin: 0, trails: 0, color: 0, blur: 0 } },
   { name: 'Horizon', A: { in1: 'horizon', size: 100, zoom: 0, spin: 0, trails: 0, color: 0, blur: 0 } },
   { name: 'Cavern', A: { in1: 'cavern', size: 100, zoom: 0, spin: 0, trails: 0, color: 0, blur: 0 } },
@@ -78,6 +81,21 @@ const STARTERS = [
   { name: 'Coral', A: { in1: 'wave', form: 3, zoom: 14, trails: 92, color: 24, warp: 6, mirror: 6, blur: 0.1, grow: 60, growSize: 1 } },
   { name: 'Ribbons', A: { in1: 'bars', size: 50, zoom: 28, spin: 60, trails: 88, color: 14, warp: 18, blur: 0.1, time: 85, timeShape: 2 } }
 ];
+
+// Named feedback looks supply their own trails; a plain source never inherits long feedback.
+function inputDefaults(src) {
+  const starter = (is3D(src) || src === 'patchwork') && STARTERS.find(look => look.A.in1 === src);
+  return { ...loopDefaults(), in1: src, trails: 0, color: 0,
+    size: ['picture', 'video', 'camera', 'screen'].includes(src) ? 78 : ['bars', 'loop'].includes(src) ? 50 : 100,
+    ...(starter ? starter.A : {}) };
+}
+
+function resetInputDefaults(src) {
+  takeOver(); setDrift(false); markPreset(null);
+  patchLoop(edit, inputDefaults(src), true);
+  Object.assign(loops[edit].cur, loops[edit].tgt);
+  clearLoop(edit); settleDevices(); syncUI(); saveSession();
+}
 
 /* ================= state ================= */
 // Crystal's ten pieces start spread over the screen
@@ -540,8 +558,9 @@ function toast(text, ms = 4500) {
 }
 let osdTimer;
 function showOSD(a, b) {
-  osd.querySelector('.osd-a').textContent = a;
-  osd.querySelector('.osd-b').textContent = b;
+  const sentence = value => String(value).toLowerCase().replace(/(^|[.!?]\s+)[a-z]/g, text => text.toUpperCase());
+  osd.querySelector('.osd-a').textContent = sentence(a);
+  osd.querySelector('.osd-b').textContent = sentence(b);
   osd.classList.add('on');
   clearTimeout(osdTimer);
   osdTimer = setTimeout(() => osd.classList.remove('on'), 2200);
@@ -571,6 +590,7 @@ const sliderEls = {}, outputs = {};
     takeOver(k);
     (isMix ? mix.tgt : loops[edit].tgt)[k] = +el.value;
     showSlider(k);
+    controlDependencies?.update();
     if ((k === 'xab' || k === 'xba') && +el.value > 0) showFedLoop(k);
     if (k === 'view' || k === 'xab' || k === 'xba' || k === 'trails') syncVisibility();
   });
@@ -586,17 +606,17 @@ const sliderEls = {}, outputs = {};
 function sliderText(k, v) {
   v = Math.round(v);
   switch (k) {
-    case 'zoom': return v > 0 ? `IN ${v}` : v < 0 ? `OUT ${-v}` : 'HOLD';
-    case 'spin': return v > 0 ? `RIGHT ${v}` : v < 0 ? `LEFT ${-v}` : 'HOLD';
+    case 'zoom': return v > 0 ? `In ${v}` : v < 0 ? `Out ${-v}` : 'Hold';
+    case 'spin': return v > 0 ? `Right ${v}` : v < 0 ? `Left ${-v}` : 'Hold';
     case 'view': {
       const wA = Math.round(Math.min(1, 2 * (1 - v / 100)) * 100), wB = Math.round(Math.min(1, 2 * v / 100) * 100);
-      return wB === 0 ? 'A ONLY' : wA === 0 ? 'B ONLY' : `A ${wA} · B ${wB}`;
+      return wB === 0 ? 'A only' : wA === 0 ? 'B only' : `A ${wA} · B ${wB}`;
     }
-    case 'blend': return v === 50 ? 'EVEN' : v < 50 ? `MAIN ${100 - v}` : `2ND ${v}`;
+    case 'blend': return v === 50 ? 'Even' : v < 50 ? `MAIn ${100 - v}` : `Second ${v}`;
     case 'color': case 'warp': case 'flow': case 'melt': case 'push': case 'dye': case 'split': case 'grow': case 'xab': case 'xba': case 'trails':
-    case 'lookup': case 'chase': case 'breathe': case 'chroma': case 'restless': case 'julia': case 'crystal': return v === 0 ? 'OFF' : String(v);
+    case 'lookup': case 'chase': case 'breathe': case 'chroma': case 'restless': case 'julia': case 'crystal': return v === 0 ? 'Off' : String(v);
     // How far back the far edge reaches
-    case 'time': return v === 0 ? 'OFF' : `${twSpan(v).toFixed(1)} SEC`;
+    case 'time': return v === 0 ? 'Off' : `${twSpan(v).toFixed(1)} sec`;
     default: return String(v);
   }
 }
@@ -621,7 +641,7 @@ function showSlider(k) {
 const in2Sel = $('#in2');
 function buildIn2() {
   in2Sel.innerHTML = '';
-  const opts = [['none', 'No second input'], ['wave', 'Wave'], ['shape', 'Shape'], ['bars', 'Bars'], ['sparks', 'Sparks'], ['ink', 'Ink drops'], ['text', 'Text (your words)'], ['spectro', 'Spectrograph (sound)'], ...Object.keys(SCENES).map((k) => [k, `${SCENES[k].label} (${sceneGroup(k) === 'fractal' ? 'fractal' : '3D world'})`]),
+  const opts = [['none', 'No second input'], ['wave', 'Wave'], ['shape', 'Shape'], ['bars', 'Bars'], ['sparks', 'Sparks'], ['ink', 'Ink drops'], ['patchwork', 'Patchwork'], ['text', 'Text (your words)'], ['spectro', 'Spectrograph (sound)'], ...Object.keys(SCENES).map((k) => [k, `${SCENES[k].label} (${sceneGroup(k) === 'fractal' ? 'fractal' : '3D world'})`]),
                 ['picture', 'Picture'], ['video', 'Video'], ['camera', 'Camera'], ['screen', 'Screen'], ['phone', 'Phone'], ['loop', 'The other loop']];
   for (const [v, label] of opts) {
     if ((inArtifact && (DEVICE.includes(v) || v === 'spectro')) || (APP && v === 'screen') || (is3D(v) && !worldOK(v))) continue;
@@ -765,6 +785,8 @@ $('#tabB').addEventListener('click', () => setEdit('B'));
 function setEdit(k) {
   edit = k;
   editor.dataset.loop = k;
+  const compactEditor = $('#minimalVisual');
+  if (compactEditor) compactEditor.dataset.loop = k;
   $('#tabA').setAttribute('aria-selected', String(k === 'A'));
   $('#tabB').setAttribute('aria-selected', String(k === 'B'));
   $('#h-in').textContent = `What feeds loop ${k}`;
@@ -842,16 +864,22 @@ function syncVisibility() {
 }
 
 function syncUI() {
-  syncMappingUI();
+  controlDependencies?.update();
+  try { lfoUI?.refresh(); } catch (error) { lfoUI = null; console.warn('LFO UI disabled:', error); }
+
   const t = loops[edit].tgt;
-  if ($('#sceneSelect')) $('#sceneSelect').value = loops.A.tgt.in1;
+  const textureSelect = $('#sceneSelect');
+  if (textureSelect) {
+    const named = 'look:' + t.textureLook;
+    textureSelect.value = Array.from(textureSelect.options).some(option => option.value === named) ? named : t.in1;
+  }
   LOOP_SLIDERS.forEach((k) => { sliderEls[k].value = Math.round(t[k]); showSlider(k); });
   MIX_SLIDERS.forEach((k) => { sliderEls[k].value = Math.round(mix.tgt[k]); showSlider(k); });
   $$('#inputs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.src === t.in1 || b.dataset.src === sceneGroup(t.in1))));
   in2Sel.value = t.in2;
   $('#blendCtl').hidden = t.in2 === 'none';
   $$('#mirror button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.mirror === t.mirror)));
-  $('#mirrorOut').textContent = t.mirror === 0 ? 'OFF' : `${t.mirror} WAY`;
+  $('#mirrorOut').textContent = t.mirror === 0 ? 'Off' : `${t.mirror} way`;
   const usesHere = (s) => t.in1 === s || t.in2 === s;
   for (const s of ['picture', 'video', 'camera', 'screen', 'loop', 'spectro', 'text']) $('#row-' + s).hidden = !usesHere(s);
   syncTextUI();
@@ -901,8 +929,8 @@ function patchLoop(k, p, force) {
   n.motion = p.motion ?? (force ? false : L.tgt.motion);
   if (keep) { n.in1 = keep; n.specRound = p.specRound ?? L.tgt.specRound; }
   // A look saved with an input that no longer exists falls back to Wave (or no second input)
-  if (!is3D(n.in1) || n.in1 === 'ribbit') n.in1 = 'mercury';
-  if (!is3D(n.in2) || n.in2 === 'ribbit') n.in2 = 'none';
+  if (!supportedInput(n.in1)) n.in1 = 'mercury';
+  if (!supportedInput(n.in2)) n.in2 = 'none';
   Object.assign(L.tgt, n);
   L.base = { ...L.tgt };
   // Each whole new look gets a number, so More like this and Not this know when it's the same look rated twice
@@ -932,7 +960,7 @@ function surpriseSelf() {
 function randomLoop() {
   const zoom = Math.round(Math.random() < 0.25 ? rnd(-45, -10) : rnd(5, 65));
   // One chance each, so every 3D world and fractal comes up as often as Wave or Shape
-  const in1 = pick(allScenes().filter((src) => src !== 'ribbit'));
+  const in1 = pick(['wave', 'shape', 'bars', 'sparks', 'ink', 'patchwork', 'text', ...allScenes().filter(supportedInput)]);
   return {
     in1, size: in1 === 'bars' || in1 === 'picture' ? 50 : in1 === 'text' ? 85 : 100, specRound: Math.random() < 0.5,
     form: 2 + Math.floor(Math.random() * 4),
@@ -1025,10 +1053,10 @@ function syncSoundUI() {
   $('#micPick').hidden = snd.src === 'loopback' ? micSel.options.length === 0 : snd.src !== 'mic' || micSel.options.length < 2;
   $('#loopbackHint').hidden = snd.src !== 'loopback';
   $$('#sndMap button').forEach((b) => b.setAttribute('aria-pressed', String(!!snd.map[b.dataset.map])));
-  syncMappingUI();
+
   sndAmt.value = snd.amount;
   fillTrack(sndAmt);
-  $('#sndAmtOut').textContent = snd.amount === 0 ? 'OFF' : String(snd.amount);
+  $('#sndAmtOut').textContent = snd.amount === 0 ? 'Off' : String(snd.amount);
 }
 // Does the same sums as the browser's own sound analyser (Blackman window, FFT, smoothing, 0-255 levels,
 // checked to match it bin for bin), but is handed the raw sound the moment it arrives. The browser's audio
@@ -1396,11 +1424,7 @@ function drawMeter() {
     ? `${music.bpm ? Math.round(music.bpm) + ' BPM · ' : ''}${music.state}`
     : snd.analysisError || (snd.rhythm ? 'Starting rhythm analysis…' : 'Basic audio response');
   $('#rhythmPhase').value = music?.bpm ? music.phase : 0;
-  const pitch = music?.pitch;
-  const notes = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
-  $('#pitchStatus').textContent = pitch
-    ? `Pitch color: ${notes[((pitch.midi % 12) + 12) % 12]} · ${music.time - pitch.time > 1 ? 'holding' : 'tracking'}`
-    : 'Pitch color: listening for a clear note';
+
 }
 
 /* ================= spectrograph ================= */
@@ -1639,14 +1663,14 @@ function limFold(k, v) {
 const AP_KEY = 'phosphor-min-autopilot-v1';
 // Each kind of input Autopilot can bring in, and its toggle under Autopilot settings (all 3D worlds share one,
 // and all the fractals another)
-const AP_INPUTS = [['wave', 'Wave'], ['shape', 'Shape'], ['bars', 'Bars'], ['sparks', 'Sparks'], ['ink', 'Ink'], ['text', 'Text'], ['spectro', 'Spectrograph'],
+const AP_INPUTS = [['wave', 'Wave'], ['shape', 'Shape'], ['bars', 'Bars'], ['sparks', 'Sparks'], ['ink', 'Ink'], ['patchwork', 'Patchwork'], ['text', 'Text'], ['spectro', 'Spectrograph'],
   ['world', '3D worlds'], ['fractal', 'Fractals'], ['picture', 'Picture'], ['video', 'Video'], ['camera', 'Camera'], ['screen', 'Screen'], ['phone', 'Phone'], ['loop', 'Other loop']];
 const AP_INPUT_KEYS = AP_INPUTS.map(([k]) => k);
 const cleanOff = (v) => (Array.isArray(v) ? [...new Set(v.filter((k) => AP_INPUT_KEYS.includes(k)))].slice(0, AP_INPUT_KEYS.length - 1) : []);
-const AP_DEFAULTS = { every: 44, fade: 63, wild: 50, mix: 50, taste: 0, beat: false, check: true, hints: false, fsKeep: false, touch: 'pin', off: [] };
+const AP_DEFAULTS = { every: 44, fade: 63, wild: 50, mix: 50, taste: 0, beat: false, check: true, hints: false, fsKeep: false, touch: 'play', off: [] };
 // When you move a control while Autopilot runs: pin it ('pin'), just play along without pinning ('play'), or stop
 // Autopilot ('stop')
-const cleanTouch = (v) => (v === 'stop' || v === 'play' ? v : 'pin');
+const cleanTouch = (v) => v === 'stop' ? 'stop' : 'play';
 const apSet = { ...AP_DEFAULTS, lim: {} };
 try {
   const s = JSON.parse(localStorage.getItem(AP_KEY) || 'null');
@@ -1663,7 +1687,7 @@ try {
   }
 } catch (_) {}
 // Whether Autopilot may bring in this input (one switched off under Autopilot settings stays out)
-const apAllowed = (src) => is3D(src) && src !== 'ribbit' && !apSet.off.includes(sceneGroup(src) || src);
+const apAllowed = (src) => supportedInput(src) && !apSet.off.includes(sceneGroup(src) || src);
 function saveAp() {
   try { localStorage.setItem(AP_KEY, JSON.stringify({ ...apSet, pins: [...ap.pins] })); } catch (_) {}
 }
@@ -1676,23 +1700,10 @@ function pinParse(id) {
   return { key, where: where || null };
 }
 // Whether a setting is pinned on loop L, on its own or on both loops (the Mix settings belong to both anyway)
-function isPinned(key, L) {
-  const P = PINS[key];
-  if (!P) return false;
-  if (P.mix) return ap.pins.has(key);
-  return ap.pins.has(`${key}@${L}`) || ap.pins.has(`${key}@both`);
-}
-function pinnedBoth(key) { return !!PINS[key] && !PINS[key].mix && ap.pins.has(`${key}@both`); }
-// Pins saved before pins were per loop held their setting on both loops, so they still do
-function addSavedPin(id) {
-  const { key, where } = pinParse(id);
-  const P = PINS[key];
-  if (!P) return;
-  if (P.mix) { if (!where) ap.pins.add(key); return; }
-  if (!where || where === 'both') ap.pins.add(`${key}@both`);
-  else if (where === 'A' || where === 'B') ap.pins.add(`${key}@${where}`);
-}
-function unpinKey(key, where) { const id = `${key}@${where}`; ap.pins.delete(id); delete ap.pinVal[id]; }
+// Compatibility hooks for legacy look generation; pinning is retired.
+function isPinned() { return false; }
+function pinnedBoth() { return false; }
+function addSavedPin() {}
 const pinned = (k, L) => ap.on && isPinned(k, L);
 
 /* ================= autopilot's eye ================= */
@@ -2048,14 +2059,14 @@ function setAutopilot(on, quiet) {
   document.documentElement.classList.toggle('ap-on', on);
   apBtns.forEach((b) => b.setAttribute('aria-pressed', String(on)));
   if (on) {
+    // Autopilot owns loop and crossfade parameters; master/source LFOs stay independent.
+    lfoUI?.disableWhere(key => isAutopilotSlider(key.slice(key.indexOf(':') + 1)));
     setDrift(true);
     ap.next = performance.now() + Math.min(7000, apEverySec() * 1000);
     ap.due = ap.next;
     ap.span = ap.next - performance.now();
     ap.picIn = apPicGap();
-    // Pinned settings start from what the sliders show now (a pin on both loops from the loop being edited)
-    for (const id of ap.pins) holdPin(id, edit);
-    // and anything outside the fader limits eases just inside them
+    // Anything outside the configured fader limits eases just inside them
     apIntoLimits();
     settleDevices();
     syncUI();
@@ -2074,31 +2085,10 @@ function setAutopilot(on, quiet) {
   }
   apStatus();
 }
-// Someone moved a control. With "Pin it, keep going" that setting is pinned where they put it and Autopilot
-// carries on; with "Play along" the move simply takes effect, nothing is pinned, and Autopilot carries on (it
-// changes that setting again with its next look); otherwise Autopilot stops. Buttons that replace the whole look
-// (Surprise me, no key) stop Autopilot whichever is chosen. The new value is read just after the control has
-// finished handling the move, which is why holdPin waits for a microtask.
+// Manual controls play along until the next look, or stop Autopilot in takeover mode.
 function takeOver(key, from) {
   if (!ap.on) return;
   if (key && PINS[key] && apSet.touch === 'play') { rampLet(key, from || edit); return; }
-  if (key && PINS[key] && apSet.touch === 'pin') {
-    const P = PINS[key], loopKey = from || edit;
-    const fresh = !isPinned(key, loopKey);
-    // Only the loop being changed gets pinned, unless this setting is already pinned on both loops
-    const id = P.mix ? key : pinnedBoth(key) ? `${key}@both` : `${key}@${loopKey}`;
-    ap.pins.add(id);
-    queueMicrotask(() => holdPin(id, loopKey));
-    if (fresh) {
-      queueMicrotask(() => tasteHintPin(key, loopKey));
-      syncPins();
-      saveAp();
-      apStatus();
-      toast(P.mix ? `Pinned ${P.name}. Autopilot keeps changing the rest. Tap its pin to let it go.`
-        : `Pinned ${P.name} on loop ${loopKey}. Tap its pin to let it go, or right-click the pin to hold it on both loops.`);
-    }
-    return;
-  }
   setAutopilot(false, true);
   toast('Autopilot off. You’re steering now.');
 }
@@ -2123,136 +2113,14 @@ function apLimit(sc, k) {
   return sc;
 }
 
-// Holds a pinned setting where it is. A pin on one loop holds that loop's setting. A pin on both loops takes the
-// setting from loop `from` and, while Autopilot runs, puts it on the other loop too, so it stays put whichever
-// loop is on screen.
-function holdPin(id, from) {
-  if (!ap.pins.has(id)) return;
-  const { key, where } = pinParse(id);
-  const P = PINS[key];
-  if (!P) return;
-  const L = where === 'A' || where === 'B' ? where : from;
-  const src = P.mix ? mix.tgt : loops[L].tgt;
-  const v = {};
-  for (const f of P.fields) v[f] = src[f];
-  ap.pinVal[id] = v;
-  if (where !== 'both' || !ap.on) return;
-  // "The other loop's picture" means something different on each loop, so that input stays on its own loop
-  if (key === 'in1' && v.in1 === 'loop') return;
-  Object.assign(loops[L === 'A' ? 'B' : 'A'].tgt, v);
-  if (key === 'in1' || key === 'in2') settleDevices();
-}
-// Puts the values pinned on loop k (or on both loops) into a new look for loop k
-function withPins(sc, k, only) {
-  for (const id of ap.pins) {
-    const { key, where } = pinParse(id);
-    const P = PINS[key];
-    if (!P || P.mix || (where !== k && where !== 'both') || (only && !only.includes(key)) || !ap.pinVal[id]) continue;
-    Object.assign(sc, ap.pinVal[id]);
-  }
-  return sc;
-}
-function pinsChanged() { syncPins(); saveAp(); apStatus(); }
-// Tapping a pin: pins or frees the setting on the loop being edited only
-function togglePin(key) {
-  const P = PINS[key], name = P.name;
-  if (P.mix) {
-    if (ap.pins.has(key)) {
-      ap.pins.delete(key);
-      delete ap.pinVal[key];
-      toast(ap.on ? `${name} is free again. Autopilot changes it from its next look.` : `${name} is no longer pinned.`);
-    } else {
-      ap.pins.add(key);
-      holdPin(key, edit);
-      tasteHintPin(key, edit);
-      toast(ap.on ? `Pinned ${name}. Autopilot keeps changing the rest.` : `Pinned ${name}. Autopilot will leave it where it is.`);
-    }
-    pinsChanged();
-    return;
-  }
-  const L = edit, other = L === 'A' ? 'B' : 'A';
-  if (isPinned(key, L)) {
-    // Freed on this loop only: a pin on both loops stays on the other one
-    if (pinnedBoth(key)) {
-      const v = ap.pinVal[`${key}@both`];
-      unpinKey(key, 'both');
-      ap.pins.add(`${key}@${other}`);
-      if (v) ap.pinVal[`${key}@${other}`] = v; else holdPin(`${key}@${other}`, other);
-    }
-    unpinKey(key, L);
-    toast(ap.on ? `${name} is free again on loop ${L}. Autopilot changes it there from its next look.` : `${name} is no longer pinned on loop ${L}.`);
-  } else {
-    ap.pins.add(`${key}@${L}`);
-    holdPin(`${key}@${L}`, L);
-    tasteHintPin(key, L);
-    toast(`Pinned ${name} on loop ${L}. Right-click the pin to hold it on both loops.`);
-  }
-  pinsChanged();
-}
-// Right-clicking a pin (or pressing and holding it on a touchscreen): pins the setting on both loops, the same on
-// each (taken from the loop being edited), or frees it on both if it's pinned on both already
-function togglePinBoth(key) {
-  const P = PINS[key], name = P.name;
-  if (P.mix) { togglePin(key); return; }
-  const wasBoth = pinnedBoth(key) || (isPinned(key, 'A') && isPinned(key, 'B'));
-  for (const w of ['A', 'B', 'both']) unpinKey(key, w);
-  if (wasBoth) {
-    toast(ap.on ? `${name} is free again on both loops.` : `${name} is no longer pinned on either loop.`);
-  } else {
-    ap.pins.add(`${key}@both`);
-    holdPin(`${key}@both`, edit);
-    tasteHintPin(key, edit);
-    toast(`Pinned ${name} on both loops, where loop ${edit} has it. Right-click the pin again to free both.`);
-  }
-  pinsChanged();
-}
-// A small pin beside each setting Autopilot can change. They show while Autopilot runs, and whenever one is pinned.
-const PIN_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 1h6v1.2L10 3v3.5L12.5 9v1.2H8.6V15H7.4v-4.8H3.5V9L6 6.5V3L5 2.2z" fill="currentColor"/></svg>';
-for (const key of Object.keys(PINS)) {
-  const anchor = key === 'in1' ? $('#in1Head') : $('#' + key);
-  const head = key === 'in1' ? anchor : anchor && anchor.closest('.ctl') && anchor.closest('.ctl').querySelector('.ctl-head');
-  if (!head) continue;
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'pin';
-  b.dataset.pin = key;
-  b.setAttribute('aria-pressed', 'false');
-  b.setAttribute('aria-label', `Pin ${PINS[key].name}`);
-  b.innerHTML = PIN_ICON + '<span class="pin-ab" aria-hidden="true">AB</span>';
-  b.addEventListener('click', () => togglePin(key));
-  // Right-click, or press and hold on a touchscreen: both loops
-  b.addEventListener('contextmenu', (e) => { e.preventDefault(); togglePinBoth(key); });
-  head.insertBefore(b, head.querySelector('output'));
-}
-// The pins show the loop being edited: lit when the setting is pinned on it, and marked AB when it's pinned on both
-function syncPins() {
-  $$('.pin').forEach((b) => {
-    const key = b.dataset.pin, P = PINS[key], name = P.name;
-    const on = isPinned(key, edit), both = !P.mix && isPinned(key, 'A') && isPinned(key, 'B');
-    b.setAttribute('aria-pressed', String(on));
-    b.classList.toggle('both', both);
-    b.setAttribute('aria-label', both ? `${name} is pinned on both loops` : `Pin ${name}${P.mix ? '' : ` on loop ${edit}`}`);
-    b.title = P.mix
-      ? (on ? `${name} is pinned: Autopilot leaves it alone. Tap to let Autopilot change it again.` : `Pin ${name}: Autopilot leaves it where it is`)
-      : both ? `${name} is pinned on both loops. Tap to free it on loop ${edit} only; right-click to free it on both.`
-      : on ? `${name} is pinned on loop ${edit}. Tap to let Autopilot change it again; right-click to pin it on both loops.`
-      : `Pin ${name} on loop ${edit}: Autopilot leaves it where it is. Right-click to pin it on both loops.`;
-  });
-  const names = [];
-  for (const [key, P] of Object.entries(PINS)) {
-    if (P.mix) { if (ap.pins.has(key)) names.push(P.name); continue; }
-    const a = isPinned(key, 'A'), b = isPinned(key, 'B');
-    if (a && b) names.push(`${P.name} (both loops)`);
-    else if (a || b) names.push(`${P.name} (loop ${a ? 'A' : 'B'})`);
-  }
-  $('#apPinList').textContent = names.length ? names.join(' · ')
-    : `Nothing pinned. While Autopilot runs, a pin shows beside each setting. Tap it${apSet.touch === 'pin' ? ', or just move that slider,' : ''} to keep the setting where it is on the loop you’re changing. Right-click a pin to keep it on both loops.`;
-  $('#apUnpin').hidden = !names.length;
-}
+// Legacy call sites remain compatible without creating pin controls or held state.
+function holdPin() {}
+function withPins(sc) { return sc; }
+function syncPins() {}
 
 // The inputs Autopilot can bring in right now, one chance each (apPick then makes the 3D worlds and fractals rarer)
 function apPool() {
-  const pool = ['wave', 'shape', 'bars', 'sparks', 'ink', 'picture', 'text', ...allScenes()];
+  const pool = ['wave', 'shape', 'bars', 'sparks', 'ink', 'patchwork', 'picture', 'text', ...allScenes().filter(supportedInput)];
   // Using the other loop as an input is one more way of mixing the loops, so Mix turned right up gives it an extra chance
   if (apSet.mix > 10) pool.push('loop');
   if (apSet.mix > 75) pool.push('loop');
@@ -2396,6 +2264,7 @@ function apFinish(sc, k, keep) {
     }
   }
   withPins(sc, k);
+  window.PhosphorDependencies?.normalizeScene(sc);
   return sc;
 }
 function clearLoop(k) {
@@ -2433,6 +2302,7 @@ function freshLook(k, shown) {
   }
   apLimit(sc, k);
   capTrails(sc, shown);
+  window.PhosphorDependencies?.normalizeScene(sc);
   patchLoop(k, sc, true);
   const L = loops[k];
   L.favMix = favMix || null;
@@ -2456,6 +2326,7 @@ function glideLook(k) {
   if (sc.in1 === 'loop' && [loops[other].tgt.in1, loops[other].tgt.in2].includes('loop') && !isPinned('in1', k)) sc.in1 = apRealInput();
   apLimit(sc, k);
   capTrails(sc, other);
+  window.PhosphorDependencies?.normalizeScene(sc);
   patchLoop(k, sc, true);
   L.favMix = favMix || null;
 }
@@ -2532,7 +2403,7 @@ function rampLook(k) {
 // Time for a new look. With Change on the beat and music coming in, it waits (up to 4 seconds) for the next beat,
 // unless Next look or the white-out watch asked for it straight away.
 function apTick(now) {
-  if (apSet.beat && snd.analyser && snd.amount > 0 && !ap.rush) {
+  if (apSet.beat && snd.analyser && !ap.rush) {
     const beats = snd.rhythmSample?.gridBeat ?? null;
     if (!ap.beatWait) ap.beatWait = { beats, until: now + 4000 };
     const onBeat = beats !== null && ap.beatWait.beats !== null && beats !== ap.beatWait.beats;
@@ -3551,17 +3422,17 @@ $('#apHints').addEventListener('click', () => {
 
 /* ================= autopilot settings ================= */
 function fmtDur(s) {
-  if (s < 9.5) return `${s.toFixed(1)} SEC`;
-  if (s < 59.5) return `${Math.round(s)} SEC`;
+  if (s < 9.5) return `${s.toFixed(1)} sec`;
+  if (s < 59.5) return `${Math.round(s)} sec`;
   const r = Math.round(s);
-  return `${Math.floor(r / 60)}:${String(r % 60).padStart(2, '0')} MIN`;
+  return `${Math.floor(r / 60)}:${String(r % 60).padStart(2, '0')} min`;
 }
 const apCtl = {
   every: { text: () => fmtDur(apEverySec()) },
   fade: { text: () => fmtDur(apFadeSec()) },
-  wild: { text: (v) => (v === 50 ? 'USUAL' : String(v)) },
-  mix: { text: (v) => (v === 0 ? 'NEVER' : v === 50 ? 'USUAL' : String(v)) },
-  taste: { text: (v) => (v === 0 ? 'OFF' : v === 50 ? 'USUAL' : String(v)) },
+  wild: { text: (v) => (v === 50 ? 'Usual' : String(v)) },
+  mix: { text: (v) => (v === 0 ? 'Never' : v === 50 ? 'Usual' : String(v)) },
+  taste: { text: (v) => (v === 0 ? 'Off' : v === 50 ? 'Usual' : String(v)) },
 };
 function showAp(k) {
   const c = apCtl[k];
@@ -3943,18 +3814,19 @@ vidPlay.addEventListener('click', () => {
   else { vidUserPaused = true; vid.video.pause(); }
   vidPlay.textContent = vid.video.paused ? 'Play' : 'Pause';
 });
-function feedInto(src) {
-  const t = loops[edit].tgt;
+function feedInto(src, key = edit) {
+  const t = loops[key].tgt;
   if (t.in1 !== src && t.in2 !== src) t.in1 = src;
   settleDevices();
   syncUI();
-  showOSD(`INPUT ${edit}`, SRC_LABEL[src].toUpperCase());
+  showOSD(`INPUT ${key}`, SRC_LABEL[src].toUpperCase());
 }
 function loadFile(file) {
   if (!file) return;
+  const targetLoop = edit;
   const type = file.type || '';
-  // A taste profile someone sent (see Taste profiles)
-  if (/\.json$/i.test(file.name || '') || type === 'application/json') { tasteFileOpen(file); return; }
+  // This edition accepts visual media rather than taste profiles.
+  if (/\.json$/i.test(file.name || '') || type === 'application/json') { toast('Choose a picture or video file.'); return; }
   if (type.startsWith('image/')) {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -3967,8 +3839,8 @@ function loadFile(file) {
       natNoCredit();
       nat.own = true;
       nat.ask++;   // a nature picture still on its way doesn't replace this one
-      feedInto('picture');
-      toast(`Feeding ${file.name} into loop ${edit}.`);
+      feedInto('picture', targetLoop);
+      toast(`Feeding ${file.name} into loop ${targetLoop}.`);
     };
     img.onerror = () => { URL.revokeObjectURL(url); toast('That picture couldn’t be opened. Try a JPG or PNG.'); };
     img.src = url;
@@ -3988,8 +3860,8 @@ function loadFile(file) {
       vidLoopA = null; vidLoopB = null; loopText();
       v.playbackRate = vidRate;
       $('#vidDur').textContent = fmtT(v.duration);
-      feedInto('video');
-      toast(`Feeding ${file.name} into loop ${edit}.`);
+      feedInto('video', targetLoop);
+      toast(`Feeding ${file.name} into loop ${targetLoop}.`);
     }, { once: true });
     v.addEventListener('error', () => { URL.revokeObjectURL(url); toast('That video couldn’t be played here. Try an MP4 or WebM file.'); }, { once: true });
     v.play().catch(() => {});
@@ -4294,11 +4166,7 @@ function buildAdjust(src) {
     });
     actions.appendChild(hold);
   }
-  const reset = document.createElement('button');
-  reset.className = 'btn small';
-  reset.textContent = 'Reset';
-  reset.addEventListener('click', () => { adj[src] = adjDefaults(); syncAdjUI(); });
-  actions.appendChild(reset);
+
   body.appendChild(actions);
   d.appendChild(body);
   const row = $('#row-' + src);
@@ -4787,12 +4655,7 @@ function loadPreset(pr, quiet) {
   if (d.snd) {
     if (d.snd.amount != null) snd.amount = d.snd.amount;
     if (d.snd.map) Object.assign(snd.map, d.snd.map);
-    if (d.snd.routes) {
-      snd.routes = window.PhosphorMappings.sanitize(d.snd.routes);
-      if (d.snd.mappingVersion !== 2) {
-        snd.routes = snd.routes.map(row => row.source === 'kick' ? {...row, source: 'bpm'} : row);
-      }
-    }
+    snd.routes = window.PhosphorMappings.defaults();
     syncSoundUI();
   }
   if (typeof d.drift === 'boolean') setDrift(d.drift);
@@ -5476,53 +5339,73 @@ function toggleRec() {
 recBtn.addEventListener('click', toggleRec);
 
 /* ================= sizing ================= */
-const narrowMQ = window.matchMedia('(max-width: 900px)');
 const SHAPES = { fill: 0, tv: 4 / 3, wide: 16 / 9 };
-let shape = 'fill';
-const RENDER_SCALE_KEY = 'phosphor-min-render-scale';
-let renderScale = 1;
-try { const saved = Number(localStorage.getItem(RENDER_SCALE_KEY)); if ([1, 0.75, 0.5].includes(saved)) renderScale = saved; } catch (_) {}
-// Keep the display/feedback at the requested resolution; adapt only costly 3D raymarching.
-const SCENE_DETAIL_KEY = 'phosphor-min-scene-detail';
-let sceneDetail = ['auto', 'smooth', 'full'].includes(lsGet(SCENE_DETAIL_KEY)) ? lsGet(SCENE_DETAIL_KEY) : 'auto';
-const detailController = window.PhosphorQuality.createController();
-let displayFrameMs = 1000 / 60;
-function resetSceneDetail() {
-  detailController.reset(performance.now(), sceneDetail === 'smooth' ? displayFrameMs : 1000 / 60);
+let shape = ['fill','tv','wide'].includes(lsGet('phosphor-shape')) ? lsGet('phosphor-shape') : 'fill';
+const SHARP_KEY = 'phosphor-sharp', SHARP_AUTO_KEY = 'phosphor-sharp-auto';
+const SHARP_MODES = ['auto', 'standard', 'high', 'full'];
+const SHARP_LEVELS = [SIM_H, 720, 900, 1080, 1440];
+const SHARP_MAX_PX = 3.7e6;   // never more than about a 2560 x 1440 picture, so memory stays in hand
+// ...except at Full, which goes up to 4K (3840 x 2160) on a computer with the memory for it
+const FULL_MAX_PX = 8.3e6;
+const maxPx = () => (sharp === 'full' && !sharpLowMem ? FULL_MAX_PX : SHARP_MAX_PX);
+const sharpLowMem = (navigator.deviceMemory > 0 && navigator.deviceMemory <= 4);
+let sharp = 'auto';
+try { const v = localStorage.getItem(SHARP_KEY); if (SHARP_MODES.includes(v)) sharp = v; } catch (_) {}
+const sharpAuto = { level: 0, top: sharpLowMem ? 3 : SHARP_LEVELS.length - 1, ceiling: 0, ceilingAt: 0,
+                    t0: 0, frames: 0, fast: 0, slow: 0, justUp: false, settle: 0 };
+sharpAuto.ceiling = sharpAuto.top;
+try { const v = +localStorage.getItem(SHARP_AUTO_KEY); if (v > 0 && v <= sharpAuto.top) sharpAuto.level = Math.round(v); } catch (_) {}
+let fitLines = SIM_H;
+// How many lines to draw, for the setting and the size the picture is shown at (never fewer than Standard)
+function wantLines() {
+  const cap = window.__phosphorCaptureConfig;
+  if (cap) return cap.renderHeight || SIM_H;
+  const top = Math.max(SIM_H, fitLines);
+  if (sharp === 'standard') return SIM_H;
+  if (sharp === 'high') return Math.min(1080, top);
+  if (sharp === 'full') return top;
+  return Math.min(SHARP_LEVELS[sharpAuto.level], top);
 }
-function sceneResolution(sc) {
-  if (sceneDetail === 'full' || window.__phosphorCaptureConfig) return sc.res || 1;
-  const pixels = sceneDetail === 'smooth' ? 1920 * 1080 : 2560 * 1440;
-  const ceiling = Math.min(1, Math.sqrt(pixels / (simW * simH)));
-  return Math.min(sc.res || 1, ceiling * detailController.scale);
+function sharpSay() {
+  $$('#sharp button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sharp === sharp)));
+  const lines = $('#linesOut');
+  if (lines) lines.textContent = `· ${simH} lines`;
+  const note = $('#sharpNote');
+  if (!note) return;
+  note.textContent = sharp === 'auto' ? `Auto: ${simH} lines right now. It sharpens the picture while this computer keeps it smooth, and steps back if it starts to slow down.`
+    : sharp === 'standard' ? `${SIM_H} lines, as Phosphor Loop has always drawn it. The lightest on the computer.`
+    : sharp === 'high' ? `Up to 1080 lines, like HD video (${simH} at this size). Needs a capable computer, or the picture slows down.`
+    : `As many lines as the screen shows, up to 4K (${simH} at this size). The sharpest, and the hardest on the computer.`;
 }
-function adaptSceneDetail(now, dt) {
-  if (sceneDetail === 'full' || frozen || document.hidden || window.__phosphorCaptureConfig) return;
-  detailController.update(now, dt * 1000);
+function sharpTick(now) {
+  const A = sharpAuto;
+  if (sharp !== 'auto' || window.__phosphorCaptureConfig || document.hidden || frozen) { A.t0 = 0; return; }
+  if (A.settle > 0) { A.settle--; A.t0 = 0; return; }
+  if (!A.t0) { A.t0 = now; A.frames = 0; return; }
+  if (++A.frames < 120) return;
+  const sec = (now - A.t0) / 1000;
+  A.t0 = 0;
+  if (sec > 8) { A.fast = A.slow = 0; return; }
+  const fps = A.frames / sec;
+  if (A.ceiling < A.top && now - A.ceilingAt > 300000) A.ceiling = A.top;
+  let to = A.level;
+  if (fps >= 55) {
+    A.slow = 0; A.justUp = false;
+    if (++A.fast >= 2 && A.level < A.ceiling && SHARP_LEVELS[A.level] < Math.max(SIM_H, fitLines)) { to = A.level + 1; A.justUp = true; }
+  } else if (fps < 45) {
+    A.fast = 0;
+    if ((A.justUp || ++A.slow >= 2) && A.level > 0) {
+      to = A.level - 1;
+      if (A.justUp) { A.ceiling = to; A.ceilingAt = now; }
+    }
+    A.justUp = false;
+  } else { A.fast = A.slow = 0; A.justUp = false; }
+  if (to === A.level) return;
+  A.level = to; A.fast = A.slow = 0;
+  try { localStorage.setItem(SHARP_AUTO_KEY, String(to)); } catch (_) {}
+  fit();
 }
-// Measure the browser's refresh cadence while the GPU is idle, rather than inferring
-// refresh from already-slow rendering. Timeout keeps background tabs from blocking startup.
-function calibrateDisplay() {
-  return new Promise(resolve => {
-    const samples = []; let previous, raf, complete = false;
-    const done = () => {
-      if (complete) return; complete = true;
-      clearTimeout(timeout); cancelAnimationFrame(raf);
-      displayFrameMs = window.PhosphorQuality.refreshInterval(samples.slice(3));
-      resetSceneDetail();
-      const note = $('#sceneDetailNote');
-      if (note) note.textContent = `Smooth targets this browser's measured ${Math.round(1000 / displayFrameMs)} Hz refresh, using softer 3D detail and effects. Output resolution stays as selected. Auto favors detail at about 60 FPS.`;
-      resolve();
-    };
-    const tick = t => {
-      if (previous !== undefined) samples.push(t - previous);
-      previous = t;
-      if (samples.length >= 27) done(); else raf = requestAnimationFrame(tick);
-    };
-    const timeout = setTimeout(done, 1200);
-    raf = requestAnimationFrame(tick);
-  });
-}
+
 const renderLimits = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
 const renderMax = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
 function renderDimensions(width, height) {
@@ -5546,7 +5429,7 @@ function copyInto(dst, srcTex) {
 }
 function dropTarget(t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
 function resim(width, height) {
-  if (width === simW && height === simH) { $('#renderSize').textContent = `${simW} × ${simH}`; return; }
+  if (width === simW && height === simH) { $('#renderSize').textContent = `${simW} × ${simH}`; sharpSay(); return; }
   // Release frame history before allocating replacement feedback buffers.
   for (const L of Object.values(loops)) if (L.tw) twDrop(L);
 
@@ -5561,13 +5444,14 @@ function resim(width, height) {
   const oldA = loops.A.rt, oldB = loops.B.rt, oldComp = comp;
   const frontA = oldA[loops.A.front].tex, frontB = oldB[loops.B.front].tex;
   simW = width; simH = height; simAspect = simW / simH;
-  resetSceneDetail();
+  sharpAuto.settle = 30;
   loops.A.rt = targets.slice(0, 2); loops.B.rt = targets.slice(2, 4); comp = targets[4];
   copyInto(loops.A.rt[0], frontA);
   copyInto(loops.B.rt[0], frontB);
   loops.A.front = 0; loops.B.front = 0;
   [...oldA, ...oldB, oldComp].forEach(dropTarget);
   $('#renderSize').textContent = `${simW} × ${simH}`;
+  sharpSay();
 }
 
 let resimTimer = null, firstFit = true;
@@ -5575,17 +5459,14 @@ let outWin = null, outCanvas = null, outCtx = null;
 function outputOpen() { return !!(outWin && !outWin.closed && outCanvas); }
 function fit() {
   const fs = document.fullscreenElement || document.webkitFullscreenElement;
-  const narrow = narrowMQ.matches && !fs;
   const sr = stage.getBoundingClientRect();
   const bz = getComputedStyle(bezel);
   const padX = parseFloat(bz.paddingLeft) + parseFloat(bz.paddingRight);
   const padY = parseFloat(bz.paddingTop) + parseFloat(bz.paddingBottom);
-  const availW = Math.max(160, Math.floor(sr.width - padX));
+  const availW = Math.max(1, Math.floor(sr.width - padX));
   const out = outputOpen();
   const want = out ? outWin.innerWidth / Math.max(1, outWin.innerHeight) : SHAPES[shape];
-  let availH = narrow
-    ? Math.round(want ? Math.min(window.innerHeight * 0.62, availW / want) : window.innerHeight * 0.58)
-    : Math.max(120, Math.floor(sr.height - padY));
+  const availH = Math.max(1, Math.floor(sr.height - padY));
   let w = availW, h = availH;
   if (want) { w = Math.floor(Math.min(availW, availH * want)); h = Math.floor(w / want); }
   canvas.style.width = w + 'px';
@@ -5598,26 +5479,29 @@ function fit() {
   } else if (out) {
     // Draw at the output window's own resolution; this screen shows a scaled preview of the same picture
     const ow = Math.max(1, outWin.innerWidth), oh = Math.max(1, outWin.innerHeight);
-    const odpr = (outWin.devicePixelRatio || 1) * renderScale;
+    const odpr = Math.min(outWin.devicePixelRatio || 1, 2, Math.sqrt(Math.max(6e6, maxPx()) / (ow * oh)));
     cw = Math.max(1, Math.round(ow * odpr)); ch = Math.max(1, Math.round(oh * odpr));
     if (outCanvas.width !== cw || outCanvas.height !== ch) { outCanvas.width = cw; outCanvas.height = ch; }
     aspect = ow / oh;
   } else {
-    // Physical display pixels, including Retina/HiDPI and fullscreen.
-    const dpr = (window.devicePixelRatio || 1) * renderScale;
+    // Cap the drawing size so a big 4K full screen stays smooth
+    const full = maxPx() > SHARP_MAX_PX;
+    const dpr = Math.min(window.devicePixelRatio || 1, full ? 2 : 1.5, Math.sqrt((full ? FULL_MAX_PX : 4.5e6) / (w * h)));
     cw = Math.max(1, Math.round(w * dpr)); ch = Math.max(1, Math.round(h * dpr));
     aspect = w / h;
   }
   [cw, ch] = renderDimensions(cw, ch);
   if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
   clearTimeout(resimTimer);
-  let renderH = window.__phosphorCaptureConfig ? (window.__phosphorCaptureConfig.renderHeight || SIM_H) : ch;
-  let renderW = window.__phosphorCaptureConfig ? Math.round(renderH * aspect) : cw;
-  if (sceneDetail === 'smooth' && !window.__phosphorCaptureConfig) {
-    const effectsScale = Math.min(1, Math.sqrt(2560 * 1440 / (renderW * renderH)));
-    renderW = Math.max(1, Math.round(renderW * effectsScale));
-    renderH = Math.max(1, Math.round(renderH * effectsScale));
+  fitLines = ch;
+  let renderH = Math.max(120, Math.round(wantLines()));
+  let renderW = Math.max(256, Math.round(renderH * aspect / 4) * 4);
+  if (!window.__phosphorCaptureConfig && renderW * renderH > maxPx()) {
+    const factor = Math.sqrt(maxPx() / (renderW * renderH));
+    renderH = Math.max(1, Math.floor(renderH * factor));
+    renderW = Math.max(1, Math.floor(renderW * factor));
   }
+  [renderW, renderH] = renderDimensions(renderW, renderH);
   if (firstFit) { firstFit = false; resim(renderW, renderH); }
   else resimTimer = setTimeout(() => resim(renderW, renderH), 180);
 }
@@ -5808,8 +5692,8 @@ function restoreSession() {
     const L = d[k];
     if (!L) continue;
     for (const slot of ['in1', 'in2']) {
-      if (is3D(L[slot]) && L[slot] !== 'ribbit' || slot === 'in2' && L[slot] === 'none') continue;
-      if (!['cameraSphere', 'cameraCube'].includes(L[slot])) missing = L[slot] === 'screen' ? 'Screen' : 'Video';
+      if (supportedInput(L[slot]) && !['camera', 'screen', 'video'].includes(L[slot])) continue;
+      if (['screen', 'camera', 'video'].includes(L[slot])) missing = SRC_LABEL[L[slot]];
       L[slot] = slot === 'in2' ? 'none' : (k === 'A' ? 'mercury' : 'cavern');
     }
   }
@@ -6473,22 +6357,6 @@ function computeInk(t, scale, flowPerSec) {
 // its second input's into the other. How brightly they glow follows the music; see frame().
 const sceneRT = { A: [null, null], B: [null, null] };
 let sceneGlow = 1;
-const mercuryDrops = new Float32Array(7 * 4);
-function updateMercury(prog, time, seed) {
-  const t = time * 0.45 + seed, swell = 1 + 0.18 * (sceneGlow - 1);
-  let bound = 0;
-  for (let i = 0; i < 7; i++) {
-    const x = 1.5 * Math.sin(t * (0.53 + 0.11 * i) + i * 1.7);
-    const y = 0.9 * Math.sin(t * (0.71 + 0.07 * i) + i * 2.9);
-    const z = 1.5 * Math.cos(t * (0.47 + 0.13 * i) + i * 0.9);
-    const r = (0.55 + 0.3 * ((i * 0.618) % 1)) * swell;
-    mercuryDrops.set([x, y, z, r], i * 4);
-    bound = Math.max(bound, Math.hypot(x, y, z) + r);
-  }
-  const location = U(prog, 'uDrops[0]'); if (location) gl.uniform4fv(location, mercuryDrops);
-  // Each smooth union can expand the zero surface by at most k/4.
-  set1f(prog, 'uDropRadius', bound + 6 * 0.75 / 4 + 0.01);
-}
 function recoverScene(name) {
   const sc = SCENES[name];
   if (!sc) return;
@@ -6516,7 +6384,7 @@ function render3D(k, name, slot, scale) {
   const sc = SCENES[name];
   if (sc.ext) return drawExt(k, sc, scale);
   if (!sceneReady(sc, true)) { if (sc.state === 'failed') recoverScene(name); return null; }
-  const w = Math.max(2, Math.round(simW * sceneResolution(sc))), h = Math.max(2, Math.round(simH * sceneResolution(sc)));
+  const w = Math.max(2, Math.round(simW * (sc.res || 1))), h = Math.max(2, Math.round(simH * (sc.res || 1)));
   let rt = sceneRT[k][slot];
   if (!rt || rt.w !== w || rt.h !== h) {
     if (rt) dropTarget(rt);
@@ -6535,12 +6403,11 @@ function render3D(k, name, slot, scale) {
   set1f(sc.prog, 'uGlow', sceneGlow);
   set2f(sc.prog, 'uMusicColor', musicFX.hue, sndPower() * musicFX.color);
   set1f(sc.prog, 'uSeed', k === 'B' ? 37 : 0);
-  set1f(sc.prog, 'uSceneQuality', sceneDetail === 'smooth' && !window.__phosphorCaptureConfig ? 0 : 1);
-  if (name === 'mercury') updateMercury(sc.prog, simT + (k === 'B' ? 11 : 0), k === 'B' ? 37 : 0);
   if (sc.fly) {
     // The fractals: where this loop's wandering camera is, which way it looks and how it is rolled
     const dr = droneOf(sc, k);
-    set3f(sc.prog, 'uCam', dr.p[0], dr.p[1], dr.p[2]);
+    const cp = dr.view || dr.p;
+    set3f(sc.prog, 'uCam', cp[0], cp[1], cp[2]);
     set3f(sc.prog, 'uFwd', dr.look[0], dr.look[1], dr.look[2]);
     set3f(sc.prog, 'uUp', dr.up[0], dr.up[1], dr.up[2]);
     set1f(sc.prog, 'uScale', dr.scale);
@@ -6808,6 +6675,7 @@ function runLoop(k, xf, brush, f) {
   }
 
   set2f(fbProg, 'uSim', simW, simH);
+  set1f(fbProg, 'uPxK', simH / SIM_H);
   set1f(fbProg, 'uTime', simT + (k === 'B' ? 11.0 : 0));
   set1f(fbProg, 'uZoom', (z / 100) * 0.03 * f);
   set1f(fbProg, 'uSpin', -(s / 100) * 0.045 * f);
@@ -7015,7 +6883,7 @@ function frame() {
   }
   const dt = Math.min(0.1, Math.max(0.001, (now - last) / 1000));
   last = now;
-  adaptSceneDetail(now, dt);
+  sharpTick(now);
   const k = 1 - Math.exp(-dt * 5);
   // Autopilot glides over its Fade time (about 10 seconds unless changed), or fast when a look cuts in on a beat.
   // Pinned settings answer their sliders straight away.
@@ -7038,6 +6906,12 @@ function frame() {
 
   for (const [name, s] of Object.entries(LIVE_SRC)) if (s.video && uses(name)) s.update();
   vcrTick();
+  controlDependencies?.update();
+  try { lfoUI?.tick(); } catch (error) {
+    lfoUI = null; console.warn('LFO stopped; manual controls remain available:', error);
+  }
+  if(ap.on&&!frozen)syncAutomationSliders();
+  controlDependencies?.update();
   packAdj();
   drawMeter();
   if (!frozen) writeSpec(dt);
@@ -7057,7 +6931,7 @@ function frame() {
       sc.z = (sc.z + step) % sc.period;
       // A fractal's wandering cameras fly on, each loop's only while that loop shows it
       if (sc.fly) for (const k of ['A', 'B']) if (loops[k].tgt.in1 === name || loops[k].tgt.in2 === name) {
-        try { droneOf(sc, k).fly(step); }
+        try { droneOf(sc, k).fly(step, { style: 'glide', drive: 0 }); }
         catch (_) { recoverScene(name); break; }
       }
       // Mount Ribbit's hikers walk on, the same way
@@ -7109,6 +6983,11 @@ function frame() {
   set2f(dispProg, 'uRes', canvas.width, canvas.height);
   set1f(dispProg, 'uTime', (now - t0) / 1000);
   set1f(dispProg, 'uStatic', staticAmt);
+  const grade = window.PhosphorVideoGrade?.state;
+  set4f(dispProg, 'uGradeBasic', grade?.videoGamma ?? 1, grade?.videoExposure ?? 0, grade?.videoContrast ?? 1, grade?.videoSaturation ?? 1);
+  set4f(dispProg, 'uGradeColor', (grade?.videoHue ?? 0) * Math.PI / 180, (grade?.videoSepia ?? 0) / 100, (grade?.videoGradient ?? 0) / 100, 0);
+  set3f(dispProg, 'uGradeRGB', grade?.videoRed ?? 1, grade?.videoGreen ?? 1, grade?.videoBlue ?? 1);
+  set2f(dispProg, 'uGradeHues', (grade?.videoShadowHue ?? 220) / 360, (grade?.videoHighlightHue ?? 40) / 360);
   // Hits from the music that show at once, on top of what they do inside the loops
   let punch = 0, flash = 0, hueKick = 0, shake = 0;
   if (snd.analyser) {
@@ -7149,66 +7028,60 @@ function frame() {
   else requestAnimationFrame(frame);
 }
 
-function syncMappingUI() {
-  snd.routes.forEach((route, i) => {
-    const row = document.querySelector(`[data-music-route="${i}"]`);
-    if (!row) return;
-    row.querySelector('[data-field="source"]').value = route.source;
-    row.querySelector('[data-field="effect"]').value = route.effect;
-    const slider = row.querySelector('input'); slider.value = route.strength; fillTrack(slider);
-    row.querySelector('output').textContent = route.strength + '%';
-    slider.disabled = route.effect === 'none';
-    for (const choice of row.querySelector('[data-field="effect"]').options) {
-      choice.disabled = route.source === 'pitch' && !['none', 'color'].includes(choice.value);
-    }
-    const option = row.querySelector('option[value="color"]');
-    option.textContent = SCENES[loops.A.tgt.in1]?.fly ? 'Structure color' : 'Scene color';
-  });
+function resetSliderControl(el) {
+  const id=el.id,route=el.closest('[data-music-route]');
+  if(window.PhosphorVideoGrade?.resetSlider(id)) {
+    // Global grading owns its own persisted defaults.
+  } else if(route) {
+    const index=Number(route.dataset.musicRoute);
+    snd.routes[index].strength=window.PhosphorMappings.defaults()[index].strength;
+  } else if(id.startsWith('adj-')) {
+    const [,src,key]=id.split('-');if(adj[src]&&key in adj[src])adj[src][key]=adjDefaults()[key];syncAdjUI();
+  } else if(id==='vidPos') { seekTo(0);vcrTick(); }
+  else el.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
+  controlDependencies?.update();saveSession();
 }
-function createMusicMappings() {
-  const details = document.createElement('details'); details.id = 'musicMappings';
-  const summary = document.createElement('summary'); summary.textContent = 'Music mappings';
-  details.appendChild(summary);
-  const note = document.createElement('p'); note.className = 'hint';
-  note.textContent = 'BPM beat gives a steady pulse once tempo is found (about 12 seconds). Choose a sound, an effect, and its strength. Dominant pitch controls color, following clear notes in the mix. It holds the last color when uncertain and may follow bass or vocals.';
-  details.appendChild(note);
-  const pitchStatus = document.createElement('p'); pitchStatus.id = 'pitchStatus'; pitchStatus.className = 'hint'; pitchStatus.textContent = 'Pitch color: listening for a clear note'; details.appendChild(pitchStatus);
-  snd.routes.forEach((route, i) => {
-    const row = document.createElement('div'); row.className = 'music-route'; row.dataset.musicRoute = i;
-    for (const [field, options, title] of [['source', window.PhosphorMappings.sources, 'Sound'], ['effect', window.PhosphorMappings.effects, 'Effect']]) {
-      const select = document.createElement('select'); select.dataset.field = field;
-      select.setAttribute('aria-label', `Mapping ${i + 1} ${title.toLowerCase()}`);
-      for (const [value, text] of Object.entries(options)) {
-        const option = document.createElement('option'); option.value = value; option.textContent = text; select.appendChild(option);
-      }
-      select.value = route[field];
-      select.addEventListener('change', () => {
-        snd.routes[i][field] = select.value;
-        if (field === 'source' && select.value === 'pitch' && snd.routes[i].effect !== 'none') snd.routes[i].effect = 'color';
-        syncMappingUI();
-      });
-      row.appendChild(select);
-    }
-    const strength = document.createElement('div'); strength.className = 'music-strength';
-    const slider = document.createElement('input'); slider.type = 'range'; slider.min = 0; slider.max = 100; slider.value = route.strength;
-    slider.setAttribute('aria-label', `Mapping ${i + 1} strength`);
-    fillTrack(slider);
-    const output = document.createElement('output'); output.textContent = route.strength + '%';
-    slider.addEventListener('input', () => { snd.routes[i].strength = Number(slider.value); output.textContent = slider.value + '%'; fillTrack(slider); });
-    strength.append(slider, output); row.appendChild(strength); details.appendChild(row);
-  });
-  const reset = document.createElement('button'); reset.className = 'btn small'; reset.type = 'button'; reset.textContent = 'Reset mappings';
-  reset.addEventListener('click', () => { snd.routes = window.PhosphorMappings.defaults(); syncMappingUI(); saveSession(); });
-  details.appendChild(reset);
-  return details;
+function resetMainSection(number) {
+  if(number==='01') {
+    lfoUI?.disableWhere(key=>key==='global:sndAmt'||key.startsWith('global:music-route-'));
+    snd.amount=60;snd.routes=window.PhosphorMappings.defaults();syncSoundUI();
+  } else if(number==='02') {
+    lfoUI?.disableWhere(key=>key.startsWith(edit+':')||MIX_SLIDERS.includes(key.split(':')[1]));
+    const src=loops[edit].tgt.in1;resetInputDefaults(src);
+    if(adj[src]){adj[src]=adjDefaults();syncAdjUI();}
+    Object.assign(mix.tgt,{view:edit==='A'?0:100,xab:0,xba:0});Object.assign(mix.cur,mix.tgt);mix.base={...mix.tgt};syncUI();
+  } else if(number==='03') {
+    lfoUI?.disableWhere(key=>key.startsWith('global:ap'));
+    setAutopilot(false,true);setDrift(false);ap.pins.clear();
+    Object.assign(apSet,AP_DEFAULTS,{off:[],lim:{}});saveAp();syncApUI();
+  } else if(number==='04') {
+    lfoUI?.disableWhere(key=>key.startsWith('global:video'));window.PhosphorVideoGrade?.reset();
+    sharp='auto';lsSet(SHARP_KEY,sharp);$('#pictureSharpness').value=sharp;
+    Object.assign(sharpAuto,{level:0,ceiling:sharpAuto.top,t0:0,fast:0,slow:0,justUp:false});lsSet(SHARP_AUTO_KEY,'0');
+    shape='fill';lsSet('phosphor-shape',shape);syncShapeUI();firstFit=true;fit();
+  }
+  controlDependencies?.update();lfoUI?.refresh();saveSession();
 }
 
 /* Minimal personal-site controls. Keep the shared renderer's legacy bindings isolated. */
 function setupMinimalUI() {
   const panel = $('.panel');
   const section = (title) => {
-    const el = document.createElement('section'); el.className = 'minimal-section';
-    const h = document.createElement('h2'); h.textContent = title; el.appendChild(h);
+    const el = document.createElement('details'); el.className = 'minimal-section';
+    const key = 'phosphor-section-' + title.slice(0,2);
+    el.open = lsGet(key) !== 'closed';
+    const h = document.createElement('summary');
+    const heading=document.createElement('span');heading.textContent=title;
+    const reset=document.createElement('button');reset.type='button';reset.className='mini-reset section-reset';reset.textContent='↺';
+    reset.setAttribute('aria-label','Reset '+title.slice(5)+' section');
+    const explanations={'01':'Reset audio amount and mappings; keep the shared audio connected.',
+      '02':'Reset the selected loop to clean input defaults, show it alone and clear crossfeeds.',
+      '03':'Turn Autopilot off and restore its default settings, pins and limits.',
+      '04':'Reset global grading, picture sharpness and screen shape.'};
+    reset.title=explanations[title.slice(0,2)];
+    reset.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();resetMainSection(title.slice(0,2));});
+    h.append(heading,reset);el.appendChild(h);
+    el.addEventListener('toggle', () => lsSet(key, el.open ? 'open' : 'closed'));
     panel.appendChild(el); return el;
   };
   const audio = section('01 / Audio');
@@ -7233,60 +7106,104 @@ function setupMinimalUI() {
   audio.appendChild($('#rhythmStatus'));
   audio.appendChild($('#rhythmPhase'));
   audio.appendChild($('#sndAmt').closest('.ctl'));
-  audio.appendChild(createMusicMappings());
   const note = document.createElement('p'); note.className = 'hint';
   note.textContent = 'No installation needed. Choose a music tab and enable Share tab audio. System audio is available when your browser offers it. Sharing needs a click each visit; your visual settings are remembered.';
   audio.appendChild(note);
   const visual = section('02 / Visualizer');
+  visual.id = 'minimalVisual'; visual.dataset.loop = edit;
+  for (const id of ['tabA', 'tabB']) $('#' + id).setAttribute('aria-controls', visual.id);
+  visual.appendChild($('#editor .tabs'));
+  visual.appendChild($('#view').closest('.ctl'));
+  visual.appendChild($('#hiddenHint'));
+  const loopNote = document.createElement('p'); loopNote.className = 'hint';
+  loopNote.textContent = 'Edit one loop at a time. What you see blends A and B; each loop keeps its own texture and effects.';
+  visual.appendChild(loopNote);
+  const choices = [
+    ...STARTERS.filter(look => ['Bloom', 'Coral', 'Ink', 'Ribbons'].includes(look.name)).map(look => ({name:look.name, patch:look.A})),
+    ...RECIPES.filter(look => ['Fractal garden', 'Shattered mirror', 'Prism', 'Marbled', 'Kaleidoscope drawing'].includes(look.name)).map(look => ({name:look.name, patch:look.patch.A, after:look.after})),
+  ];
   const label = document.createElement('label'); label.htmlFor = 'sceneSelect'; label.textContent = 'Texture';
   const select = document.createElement('select'); select.id = 'sceneSelect';
-  for (const src of allScenes().filter((src) => src !== 'ribbit')) {
-    const opt = document.createElement('option'); opt.value = src; opt.textContent = SRC_LABEL[src]; select.appendChild(opt);
+  const lookGroup = document.createElement('optgroup'); lookGroup.label = '2D looks';
+  for (const look of choices) {
+    const option = document.createElement('option'); option.value = 'look:' + look.name;
+    option.textContent = look.name === 'Bloom' ? 'Kaleidoscope (2D) — Bloom' : look.name === 'Fractal garden' ? 'Fractal garden (2D)' : look.name;
+    lookGroup.appendChild(option);
+  }
+  select.appendChild(lookGroup);
+  const inputGroups = [
+    ['2D patterns', ['wave', 'shape', 'bars', 'sparks', 'ink', 'patchwork', 'text', 'spectro']],
+    ['3D worlds', allScenes().filter(src => sceneGroup(src) === 'world' && supportedInput(src))],
+    ['3D fractals', allScenes().filter(src => sceneGroup(src) === 'fractal')],
+    ['Media and loops', ['picture', 'video', 'camera', 'screen', 'loop', 'none']],
+  ];
+  for (const [title, sources] of inputGroups) {
+    const group = document.createElement('optgroup'); group.label = title;
+    for (const src of sources) {
+      const option = document.createElement('option'); option.value = src; option.textContent = SRC_LABEL[src]; group.appendChild(option);
+    }
+    select.appendChild(group);
   }
   select.addEventListener('change', () => {
+    const look = choices.find(look => select.value === 'look:' + look.name);
+    if (look) {
+      takeOver(); setDrift(false); markPreset(null);
+      patchLoop(edit, {...look.patch, textureLook: look.name}, true);
+      clearLoop(edit); settleDevices(); syncUI(); saveSession();
+      toast(`${look.name} on loop ${edit}.${look.after ? ' ' + look.after : ''}`);
+      return;
+    }
     const source = select.value;
-    takeOver(); setEdit('A'); setDrift(false);
-    applyPatch({ A: { in1: source, trails: 0, size: 85 }, B: { in1: source, trails: 0, size: 85 } });
+    resetInputDefaults(source);
+    chooseSource('in1', source);
     syncUI(); saveSession();
   });
-  select.addEventListener('change', syncMappingUI);
   visual.append(label, select);
-  const detailLabel = document.createElement('label'); detailLabel.htmlFor = 'sceneDetail'; detailLabel.textContent = '3D detail';
-  const detail = document.createElement('select'); detail.id = 'sceneDetail';
-  for (const [value, text] of [['auto', 'Auto — balanced'], ['smooth', 'Smooth — prioritize frame rate'], ['full', 'Full — every render pixel']]) {
-    const option = document.createElement('option'); option.value = value; option.textContent = text; detail.appendChild(option);
-  }
-  detail.value = sceneDetail;
-  detail.addEventListener('change', () => { sceneDetail = detail.value; resetSceneDetail(); lsSet(SCENE_DETAIL_KEY, sceneDetail); fit(); });
-  const detailNote = document.createElement('p'); detailNote.className = 'hint'; detailNote.id = 'sceneDetailNote';
-  detailNote.textContent = 'Smooth prioritizes frame rate with softer 3D detail and effects. Auto balances detail and motion. Full keeps all render pixels.';
-  visual.append(detailLabel, detail, detailNote);
-  const qualityLabel = document.createElement('label'); qualityLabel.htmlFor = 'renderQuality'; qualityLabel.textContent = 'Render resolution';
-  const quality = document.createElement('select'); quality.id = 'renderQuality';
-  for (const [value, text] of [[1, 'Native (100%)'], [0.75, '75% — faster'], [0.5, '50% — fastest']]) {
+  const inputNote = document.createElement('p'); inputNote.className = 'hint';
+  inputNote.textContent = 'Plain textures start with Trails off. Named 2D looks use their original effects; Kaleidoscope drawing starts blank for you to draw on.'; visual.appendChild(inputNote);
+  for (const id of ['row-picture', 'row-video', 'row-camera', 'row-screen', 'row-loop', 'row-text', 'row-spectro', 'motionCtl']) visual.appendChild($('#' + id));
+  const mediaNote = document.createElement('p'); mediaNote.className = 'hint';
+  mediaNote.textContent = 'Loaded pictures and videos are shared between loops; each loop keeps its own effects. Drop a file onto the picture to load it into the selected loop.';
+  visual.appendChild(mediaNote);
+  const cameraNote = document.createElement('p'); cameraNote.className = 'hint';
+  cameraNote.textContent = 'In 3D, Input size widens or narrows the camera view. Fractal cameras glide on their own; A and B take separate routes.';
+  visual.appendChild(cameraNote);
+  const qualityLabel = document.createElement('label'); qualityLabel.htmlFor = 'pictureSharpness'; qualityLabel.textContent = 'Picture sharpness';
+  const quality = document.createElement('select'); quality.id = 'pictureSharpness';
+  for (const [value, text] of [['auto', 'Auto — balance detail and motion'], ['standard', 'Standard — 576 lines'], ['high', 'High — up to 1080 lines'], ['full', 'Full — up to 4K']]) {
     const option = document.createElement('option'); option.value = value; option.textContent = text; quality.appendChild(option);
   }
-  quality.value = renderScale;
-  quality.addEventListener('change', () => { renderScale = Number(quality.value); lsSet(RENDER_SCALE_KEY, String(renderScale)); fit(); });
-  visual.append(qualityLabel, quality);
+  quality.value = sharp;
+  quality.addEventListener('change', () => {
+    sharp = quality.value; lsSet(SHARP_KEY, sharp);
+    Object.assign(sharpAuto, { ceiling: sharpAuto.top, t0: 0, fast: 0, slow: 0, justUp: false });
+    firstFit = true; fit();
+  });
+  const qualityNote = document.createElement('p'); qualityNote.id = 'sharpNote'; qualityNote.className = 'hint';
+  visual.append(qualityLabel, quality, qualityNote);
+  sharpSay();
   for (const id of ['size', 'trails', 'color']) visual.appendChild($('#' + id).closest('.ctl'));
   const advanced = document.createElement('details');
   const summary = document.createElement('summary'); summary.textContent = 'More effects'; advanced.appendChild(summary);
-  for (const id of ['zoom', 'spin', 'warp']) advanced.appendChild($('#' + id).closest('.ctl'));
+  for (const id of ['zoom', 'spin', 'warp', 'flow', 'melt', 'grow', 'julia', 'crystal', 'chroma']) advanced.appendChild($('#' + id).closest('.ctl'));
+  advanced.appendChild($('#mirror').closest('.ctl'));
   visual.appendChild(advanced);
-  const reset = $('#neutral'); reset.textContent = 'Reset effects'; visual.appendChild(reset);
+
   const auto = section('03 / Autopilot');
   auto.appendChild($('#autopilot'));
   for (const id of ['apEvery', 'apFade', 'apWild']) auto.appendChild($('#' + id).closest('.ctl'));
   auto.appendChild($('#apBeat').closest('.ctl'));
+  const video = section('04 / Video');
+  video.id = 'globalVideo';
+  video.append(qualityLabel, quality, qualityNote);
+  video.appendChild($('#shape').closest('.ctl'));
+  window.PhosphorVideoGrade?.createUI(video, fillTrack, () => lfoUI?.disableWhere(key => key.startsWith('global:video')));
   const saved = document.createElement('p'); saved.className = 'hint'; saved.textContent = 'Your look and autopilot settings are saved in this browser.'; panel.appendChild(saved);
   for (const id of ['rateUp', 'rateDown', 'fsRateUp', 'fsRateDown', 'sessionStart', 'showBtn']) $('#' + id).disabled = true;
   hideTip();
   $('#guideBtn').hidden = true;
-  // Do not accept files or teach profiles in this focused edition.
-  window.addEventListener('drop', (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
-  window.addEventListener('dragover', (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
-  const updateScene = () => { select.value = loops.A.tgt.in1; syncMappingUI(); };
+  // File inputs and the existing drop handler share the original media-loading path.
+  const updateScene = () => { syncUI(); };
   document.addEventListener('pointerdown', () => { if (snd.ctx?.state === 'suspended') snd.ctx.resume().catch(() => {}); });
   updateScene();
   panel.addEventListener('input', saveSession);
@@ -7294,15 +7211,75 @@ function setupMinimalUI() {
 }
 
 /* ================= start ================= */
-applyPatch({ A: { in1: 'mercury', trails: 0, size: 85 }, B: { in1: 'cavern', trails: 0, size: 85 } });
+applyPatch({ A: inputDefaults('mercury'), B: inputDefaults('cavern') });
 setDrift(false);
 for (const key of ['A', 'B']) Object.assign(loops[key].cur, loops[key].tgt);
 Object.assign(mix.cur, mix.tgt);
 setEdit('A');
 // Autopilot's eye is made now, with everything else, so starting Autopilot never waits for it
 eyeSetup();
-calibrateDisplay().then(() => { last = performance.now(); requestAnimationFrame(frame); });
+last = performance.now(); requestAnimationFrame(frame);
 setupMinimalUI();
+try {
+lfoUI = window.PhosphorLFO?.createUI({
+  root: $('.panel'),
+  onReset: resetSliderControl,
+  isAvailable: (el, scope) => !dependencyReason(el, scope),
+  getScope: el => LOOP_SLIDERS.includes(el.id) ? edit : 'global',
+  getBeat: () => {
+    const music = snd.rhythmSample;
+    return music?.bpm > 0 && Number.isFinite(music.gridBeat) && Number.isFinite(music.phase) ? music.gridBeat + music.phase : null;
+  },
+  isFrozen: () => frozen,
+  fillTrack,
+  onEnable: el => { if (!isAutopilotSlider(el.id)) return; if (ap.on) setAutopilot(false, true); setDrift(false); },
+  setValue: applyAutomatedSlider,
+});
+if(ap.on)lfoUI?.disableWhere(key=>isAutopilotSlider(key.slice(key.indexOf(':')+1)));
+} catch (error) {
+  lfoUI = null; console.warn('LFO setup skipped; manual controls remain available:', error);
+}
+function isAutopilotSlider(id) { return LOOP_SLIDERS.includes(id)||MIX_SLIDERS.includes(id); }
+function syncAutomationSliders() {
+  for(const id of [...LOOP_SLIDERS,...MIX_SLIDERS]) {
+    const el=sliderEls[id];
+    const value=(MIX_SLIDERS.includes(id)?mix.cur:loops[edit].cur)[id];
+    if(!Number.isFinite(value))continue;
+    const previous=el.value;el.value=value;
+    if(el.value!==previous)showSlider(id);
+  }
+}
+function applyAutomatedSlider(el, value, scope) {
+    const id = el.id;
+    if (window.PhosphorVideoGrade?.setSlider(id, value)) {
+      // Global output controls run after compositing, never in texture feedback.
+    } else if (LOOP_SLIDERS.includes(id)) {
+      loops[scope].tgt[id] = value; loops[scope].cur[id] = value;
+      if (scope === edit) { el.value = value; showSlider(id); }
+    } else if (MIX_SLIDERS.includes(id)) {
+      mix.tgt[id] = value; mix.cur[id] = value; el.value = value; showSlider(id);
+      syncVisibility();
+    } else if (id === 'sndAmt') {
+      snd.amount = value; el.value = value; $('#sndAmtOut').textContent = String(Math.round(value));
+    } else if (id.startsWith('ap') && apCtl[id.slice(2).toLowerCase()]) {
+      const key = id.slice(2).toLowerCase(); apSet[key] = value; showAp(key);
+    } else if (id.startsWith('adj-')) {
+      const entry=adjEls.find(entry=>entry.el===el);
+      if(entry) { adj[entry.src][entry.k]=value;el.value=value;entry.refresh(); }
+    } else if (id === 'vidPos') {
+      el.value = value; el.dispatchEvent(new Event('input'));
+    }
+}
+function dependencyState(el, scope = edit) {
+  const mapping = el.closest('[data-music-route]');
+  return {loop:loops[scope === 'global' ? edit : scope].tgt, audio:!!snd.analyser, video:window.PhosphorVideoGrade?.state,
+    route:mapping ? snd.routes[Number(mapping.dataset.musicRoute)] : null};
+}
+function dependencyReason(el, scope = edit) {
+  return window.PhosphorDependencies?.reason(el.id, dependencyState(el, scope)) || '';
+}
+controlDependencies = window.PhosphorDependencies?.create({root:$('.panel'),getState:dependencyState});
+try { window.PhosphorControlHelp?.setup($('.panel')); } catch (error) { console.warn('Control help unavailable:', error); }
 fit();
 document.body.classList.add('ui-ready');
 showStart();

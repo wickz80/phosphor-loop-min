@@ -1,10 +1,10 @@
 // Phosphor Loop keeps a copy of itself in the browser, so after one visit it opens without internet.
 // Online, every file is fetched fresh and the copy updated; offline, or on a very slow network, the copy is used.
 const CACHE_PREFIX = `phosphor-loop:${new URL(self.registration.scope).pathname}:`;
-const CACHE = CACHE_PREFIX + 'app-smooth-shaders-1';
+const CACHE = CACHE_PREFIX + 'app-automation-controls-1';
 const NATURE = CACHE_PREFIX + 'nature';   // nature pictures seen so far, or all of them via Show setup; kept when the app updates
-const APP = ['./', 'index.html', 'icon-180.png', 'icon-192.png', 'nature/pictures.json', 'styles/base.css', 'styles/app.css', 'js/fractal-math.js', 'js/shaders.js', 'js/helpers.js', 'js/recording-formats.js', 'js/output-template.js', 'js/ribbit.js', 'js/audio/mappings.js', 'js/audio/beat-clock.js', 'js/audio/rhythm.js', 'js/audio/rhythm-worklet.js', 'js/audio/tempo-worker.js', 'vendor/essentia/essentia-wasm.es.js', 'vendor/essentia/essentia.js-core.es.js', 'js/render-quality.js', 'js/app.js'];
-const FONT_CSS = 'https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Michroma&family=VT323&display=swap';
+const APP = ['./', 'index.html', 'icon-180.png', 'icon-192.png', 'nature/pictures.json', 'styles/base.css', 'styles/app.css', 'js/fractal-math.js', 'js/video-grade.js', 'js/shaders.js', 'js/helpers.js', 'js/recording-formats.js', 'js/output-template.js', 'js/ribbit.js', 'js/audio/mappings.js', 'js/audio/beat-clock.js', 'js/audio/rhythm.js', 'js/audio/rhythm-worklet.js', 'js/audio/tempo-worker.js', 'vendor/essentia/essentia-wasm.es.js', 'vendor/essentia/essentia.js-core.es.js', 'js/control-dependencies.js', 'js/control-help.js', 'js/lfo.js', 'js/app.js'];
+const FONT_CSS = 'https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap';
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 const SLOW_MS = 4000;
 

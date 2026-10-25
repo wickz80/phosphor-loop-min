@@ -25,9 +25,14 @@ try {
   const context = await browser.newContext({serviceWorkers:'block', viewport:{width:980,height:750}});
   await context.addInitScript(() => {
     window.__audioCalls = [];
+    window.__cameraCalls = [];
     window.__shareCalls = [];
     window.__shareMode = 'audio';
-    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {value:async () => {
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {value:async options => {
+      if (options.video && options.audio === false) {
+        window.__cameraCalls.push(options);
+        throw new DOMException('Camera denied for test', 'NotAllowedError');
+      }
       window.__audioCalls.push('unexpected microphone request');
       throw new Error('Microphone must not be requested');
     }});
@@ -77,29 +82,102 @@ try {
   assert.deepEqual(finalLayout, initialLayout, 'header and sidebar must not change layout when the renderer starts');
   await page.waitForFunction(() => document.querySelector('#sndStatus').textContent.includes('Click Share audio'));
   await frames(5);
-  const checkResolution = async scale => {
-    await page.waitForFunction(scale => {
+  const checkResolution = async () => {
+    await page.waitForFunction(() => {
       const c = document.querySelector('#screen'), r = c.getBoundingClientRect();
-      return c.width === Math.round(r.width * devicePixelRatio * scale) &&
-        c.height === Math.round(r.height * devicePixelRatio * scale) &&
-        document.querySelector('#renderSize').textContent === `${c.width} × ${c.height}`;
-    }, scale, {timeout:20000});
+      const dpr = Math.min(devicePixelRatio, 2, Math.sqrt(8.3e6 / (r.width * r.height)));
+      const match = /^(\d+) × (\d+)$/.exec(document.querySelector('#renderSize').textContent);
+      return c.width === Math.round(r.width * dpr) && c.height === Math.round(r.height * dpr) &&
+        match && Number(match[2]) >= 576 && Math.abs(Number(match[1]) / Number(match[2]) - c.width / c.height) < 0.03;
+    }, null, {timeout:20000});
   };
-  await checkResolution(1);
+  await page.locator('#pictureSharpness').selectOption('full');
+  await checkResolution();
   await page.waitForFunction(() => /^\d+ FPS$/.test(document.querySelector('#renderFps').textContent));
   assert.equal(await page.locator('#currentTexture').textContent(), 'Mercury');
+  assert.equal(await page.locator('#trails').inputValue(), '0');
+  assert.equal(await page.locator('#size').inputValue(), '100');
+  for (const id of ['flow','warp','spin','grow']) assert.equal(await page.locator('#'+id).isDisabled(),true);
+  await page.locator('#trails').evaluate(el => {el.value=60;el.dispatchEvent(new Event('input',{bubbles:true}));});
+  for (const id of ['flow','warp','spin','grow']) assert.equal(await page.locator('#'+id).isDisabled(),false);
+  await page.locator('#trails').evaluate(el => {el.value=0;el.dispatchEvent(new Event('input',{bubbles:true}));});
+  await page.locator('#trails').evaluate(el => {el.value=40;el.dispatchEvent(new Event('input',{bubbles:true}));});
+  await page.getByRole('button', {name:'Reset Trails',exact:true}).click();
+  assert.equal(await page.locator('#trails').inputValue(),'0');
+  const audioSection = page.locator('details.minimal-section').filter({has:page.locator('#connectAudio')});
+  await audioSection.locator(':scope > summary').click();
+  assert.equal(await page.locator('#connectAudio').isVisible(),false);
+  await audioSection.locator(':scope > summary').click();
+  assert.equal(await page.locator('#connectAudio').isVisible(),true);
+  await page.getByRole('button', {name:'Reset Audio section',exact:true}).click();
+  assert.equal(await audioSection.evaluate(el => el.open),true,'section reset does not collapse its heading');
+
+  assert.equal(await page.getByRole('button', {name:/About Autopilot/}).count(),0,'buttons have hover help without extra icons');
+  await page.getByRole('button', {name:'About Trails',exact:true}).focus();
+  assert.match(await page.getByRole('tooltip').textContent(), /How long echoes last/);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.getByRole('tooltip').isVisible(), false);
+  await page.getByRole('checkbox', {name:'Trails LFO',exact:true}).check();
+  const fromTick = page.getByRole('slider', {name:'Trails LFO From',exact:true});
+  const toTick = page.getByRole('slider', {name:'Trails LFO To',exact:true});
+  await fromTick.press('Home'); await fromTick.press('Shift+ArrowRight');
+  await toTick.press('Home');
+  for (let i=0;i<4;i++) await toTick.press('Shift+ArrowRight');
+  assert.equal(await fromTick.getAttribute('aria-valuenow'), '10');
+  assert.equal(await toTick.getAttribute('aria-valuenow'), '40');
+  await page.getByLabel('Trails LFO curve', {exact:true}).selectOption('log');
+  assert.ok(await page.getByLabel('Trails LFO beats', {exact:true}).evaluate(el => el.getBoundingClientRect().height <= 16));
+  await page.getByLabel('Trails LFO beats', {exact:true}).selectOption('0.125');
+  await frames(3);
+  assert.ok(await page.locator('#trails').evaluate(el => el.classList.contains('lfo-active-slider')));
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('phosphor-min-lfo-v1'))['A:trails'].beats), 0.125);
+  await page.locator('#tabB').click();
+  assert.equal(await page.getByRole('checkbox', {name:'Trails LFO',exact:true}).isChecked(), false);
+  await page.locator('#tabA').click();
+  assert.equal(await page.getByRole('checkbox', {name:'Trails LFO',exact:true}).isChecked(), true);
+  await page.locator('#trails').press('ArrowRight');
+  assert.equal(await page.getByRole('checkbox', {name:'Trails LFO',exact:true}).isChecked(), false, 'manual keyboard movement takes over');
+  assert.equal(await page.locator('#trails').evaluate(el => el.classList.contains('lfo-active-slider')), false);
+
   assert.equal(await page.locator('.top #renderSize').count(), 0);
   assert.equal(await page.locator('.bottom-bar #renderSize').count(), 1);
   assert.equal(await page.locator('.bottom-bar #renderBpm').count(), 1);
   assert.equal(await page.locator('#renderBpm').textContent(), '— BPM');
   assert.equal(await page.locator('.bottom-bar #tc').count(), 1);
+  const overlayRows = await page.evaluate(() => {
+    const text=document.querySelector('#currentTexture').getBoundingClientRect();
+    const buttons=document.querySelector('.playback-buttons').getBoundingClientRect();
+    return buttons.bottom <= text.top;
+  });
+  assert.equal(overlayRows,true,'canvas buttons sit above bottom information');
+  assert.equal(await page.locator('#globalVideo #pictureSharpness').count(),1,'quality is global');
+
   assert.equal(await page.locator('.top #tc').count(), 0);
+  // Desktop and the former 851–900px breakpoint gap must contain sidebar scrolling.
+  for (const width of [980,880,760,390]) {
+    await page.setViewportSize({width,height:750}); await frames(5);
+    await page.locator('.panel').evaluate(panel => {panel.scrollTop=panel.scrollHeight;});
+    const before = await page.locator('#screen').boundingBox();
+    const header = await page.locator('.top').boundingBox();
+    assert.ok(header.y >= 0 && header.y < 2, 'workspace begins at the viewport top');
+    assert.ok(before.y >= header.y + header.height - 1, 'canvas never starts above its visible container');
+    assert.ok(before.x >= 0 && before.y + before.height <= 751, 'canvas is fully inside the viewport');
+    assert.equal(await page.locator('.app').evaluate(el => getComputedStyle(el).position), 'fixed');
+    const panel = await page.locator('.panel').boundingBox();
+    await page.mouse.move(panel.x+panel.width/2,panel.y+panel.height-20);
+    await page.mouse.wheel(0,800); await frames(5);
+    assert.equal(await page.evaluate(() => window.scrollY),0,'sidebar end must not scroll the page');
+    assert.equal(await page.locator('.panel').evaluate(panel => getComputedStyle(panel).overscrollBehaviorY),'contain');
+    const after = await page.locator('#screen').boundingBox();
+    assert.equal(after.y,before.y,'canvas stays in place');
+    await page.locator('.panel').evaluate(panel => {panel.scrollTop=0;});
+  }
   await page.setViewportSize({width:940,height:690});
-  await checkResolution(1);
-  await page.locator('#renderQuality').selectOption('0.5');
-  await checkResolution(0.5);
-  await page.locator('#renderQuality').selectOption('1');
-  await checkResolution(1);
+  await checkResolution();
+  await page.locator('#pictureSharpness').selectOption('standard');
+  await page.waitForFunction(() => /× 576$/.test(document.querySelector('#renderSize').textContent));
+  await page.locator('#pictureSharpness').selectOption('full');
+  await checkResolution();
   await page.locator('#full').click();
   await page.waitForFunction(() => !!document.fullscreenElement);
   assert.equal(await page.evaluate(() => document.fullscreenElement.contains(document.querySelector('.bottom-bar'))), true);
@@ -113,27 +191,27 @@ try {
     return b.left >= c.left - 1 && b.right <= c.right + 1 && b.bottom <= c.bottom + 1;
   });
   assert.equal(overlayFits, true);
-  await checkResolution(1);
+  await checkResolution();
   await page.evaluate(() => document.exitFullscreen());
-  await checkResolution(1);
+  await checkResolution();
   // Verify physical pixels at a higher display density without a large GPU workload.
   await page.setViewportSize({width:500,height:400});
   await page.evaluate(() => { Object.defineProperty(window, 'devicePixelRatio', {configurable:true,value:2}); window.dispatchEvent(new Event('resize')); });
-  await checkResolution(1);
+  await checkResolution();
   await page.evaluate(() => { Object.defineProperty(window, 'devicePixelRatio', {configurable:true,value:1}); window.dispatchEvent(new Event('resize')); });
   await page.setViewportSize({width:980,height:750});
-  await checkResolution(1);
-  assert.equal(await page.locator('.minimal-section').count(), 3);
+  await checkResolution();
+  assert.equal(await page.locator('.minimal-section').count(), 4);
   assert.equal(await page.locator('#tasteGroup').isVisible(), false);
   assert.equal(await page.locator('#showGroup').isVisible(), false);
-  assert.equal(await page.locator('#sceneDetail').inputValue(), 'auto');
-  const outputBeforeSmooth = await page.locator('#screen').evaluate(c => [c.width, c.height]);
-  await page.locator('#sceneDetail').selectOption('smooth');
-  await frames(20);
-  assert.deepEqual(await page.locator('#screen').evaluate(c => [c.width, c.height]), outputBeforeSmooth, 'Smooth preserves selected output dimensions');
-  await page.waitForFunction(() => /measured [0-9]+ Hz/.test(document.querySelector('#sceneDetailNote').textContent));
-  assert.equal(await page.evaluate(() => localStorage.getItem('phosphor-min-scene-detail')), 'smooth');
-  await page.locator('#sceneDetail').selectOption('full');
+  await page.locator('#pictureSharpness').selectOption('auto');
+  assert.match(await page.locator('#sharpNote').textContent(), /Auto:/);
+  await page.locator('#pictureSharpness').selectOption('high');
+  await page.waitForFunction(() => {
+    const h = Number(document.querySelector('#renderSize').textContent.split('×')[1]);
+    return h >= 576 && h <= 1080;
+  });
+  await page.locator('#pictureSharpness').selectOption('full');
   assert.equal(await page.locator('#sceneSelect').inputValue(), 'mercury');
   assert.deepEqual(await page.evaluate(() => [window.__audioCalls.length, window.__shareCalls.length]), [0, 0]);
   await page.locator('#connectAudio').click();
@@ -142,22 +220,60 @@ try {
   assert.ok(await page.locator('#rhythmStatus').isVisible());
   assert.ok(await page.locator('#renderBpm').isVisible());
   await page.waitForFunction(() => /Finding BPM|[0-9]+ BPM/.test(document.querySelector('#renderBpm').textContent));
-  await page.waitForFunction(() => document.querySelector('#pitchStatus').textContent.includes('A · tracking'));
   assert.equal(await page.evaluate(() => window.__shareCalls[0].systemAudio), 'include');
   assert.equal(await page.evaluate(() => window.__shareCalls[0].video.displaySurface), 'browser');
-  assert.equal(await page.locator('#musicMappings').getAttribute('open'), null);
-  await page.locator('#musicMappings summary').click();
-  assert.equal(await page.locator('[data-music-route]').count(), 3);
-  assert.equal(await page.getByLabel('Mapping 1 strength', {exact:true}).evaluate(el => el.style.getPropertyValue('--b')), '85%');
-  assert.equal(await page.locator('[data-music-route="2"] option[value="spin"]').isDisabled(), true);
-  await page.getByLabel('Mapping 1 sound', {exact:true}).selectOption('bass');
-  await page.getByLabel('Mapping 1 effect', {exact:true}).selectOption('none');
-  assert.equal(await page.getByLabel('Mapping 1 strength', {exact:true}).isDisabled(), true);
-  await page.getByLabel('Mapping 1 effect', {exact:true}).selectOption('spin');
-  await page.getByLabel('Mapping 1 strength', {exact:true}).evaluate(el => {el.value=37;el.dispatchEvent(new Event('input',{bubbles:true}));});
-  assert.equal(await page.getByLabel('Mapping 1 strength', {exact:true}).evaluate(el => el.style.getPropertyValue('--b')), '37%');
+  assert.equal(await page.locator('#musicMappings').count(),0);
+  assert.equal(await page.locator('.pin').count(),0);
+  assert.equal(await page.evaluate(() => window.__cameraCalls.length), 0, 'startup does not request a camera');
+  await page.locator('#sceneSelect').selectOption('camera');
+  await page.waitForFunction(() => document.querySelector('#camStatus').textContent.includes('Camera access was blocked'));
+  assert.ok(await page.locator('#row-camera').isVisible());
+  assert.ok(await page.locator('#camRetry').isVisible());
+  assert.equal(await page.evaluate(() => window.__cameraCalls.length), 1);
+  assert.equal(await page.evaluate(() => window.__cameraCalls[0].audio), false, 'webcam requests video only');
+  const videoChooser = page.waitForEvent('filechooser');
+  await page.locator('#sceneSelect').selectOption('video');
+  await (await videoChooser).setFiles([]);
+  assert.ok(await page.locator('#row-video').isVisible());
+  assert.ok(await page.locator('#pickVid').isVisible());
+  await page.locator('#sceneSelect').selectOption('picture');
+  assert.ok(await page.locator('#row-picture').isVisible());
+  assert.equal(await page.locator('#row-video').isVisible(), false);
+  await page.locator('#sceneSelect').selectOption('loop');
+  assert.ok(await page.locator('#row-loop').isVisible());
+  assert.ok(await page.locator('#motionCtl').isVisible());
+  await page.locator('#sceneSelect').selectOption('mercury');
+  // Editing B must leave A's texture and effects intact.
+  await page.locator('#tabB').click();
+  assert.equal(await page.locator('#tabB').getAttribute('aria-selected'), 'true');
+  await page.locator('#sceneSelect').selectOption('aurora');
+  await page.locator('#trails').evaluate(el => {el.value=23;el.dispatchEvent(new Event('input',{bubbles:true}));});
+  await page.locator('#tabA').click();
+  assert.equal(await page.locator('#sceneSelect').inputValue(), 'mercury');
+  await page.locator('#tabB').click();
+  assert.equal(await page.locator('#sceneSelect').inputValue(), 'aurora');
+  assert.equal(await page.locator('#trails').inputValue(), '23');
+  await page.locator('#sceneSelect').selectOption('cavern');
+  assert.equal(await page.locator('#trails').inputValue(), '0', 'new inputs start without inherited trails');
+  await page.locator('#view').evaluate(el => {el.value=50;el.dispatchEvent(new Event('input',{bubbles:true}));});
+  await page.locator('#tabA').click();
+  await page.locator('#view').evaluate(el => {el.value=0;el.dispatchEvent(new Event('input',{bubbles:true}));});
+  for (const name of ['Fractal garden', 'Bloom', 'Shattered mirror']) {
+    await page.locator('#sceneSelect').selectOption('look:' + name); await frames(120);
+    await page.screenshot({path:'/tmp/phosphor-2d-' + name.toLowerCase().replaceAll(' ', '-') + '.png'});
+    assert.equal(await page.locator('#sceneSelect').inputValue(), 'look:' + name);
+    assert.ok(Number(await page.locator('#trails').inputValue()) > 0, 'named feedback recipe retains upstream trails');
+  }
+  await page.locator('#tabB').click();
+  assert.equal(await page.locator('#sceneSelect').inputValue(), 'cavern');
+  await page.locator('#tabA').click();
+  assert.equal(await page.locator('#sceneSelect').inputValue(), 'look:Shattered mirror', 'selected 2D look remains visible when switching loops');
+  await page.getByRole('button', {name:'Reset Visualizer section',exact:true}).click();
+  assert.equal(await page.locator('#trails').inputValue(), '0');
+  await page.locator('#sceneSelect').selectOption('patchwork'); await frames(20);
+  assert.equal(await page.locator('#trails').inputValue(), '0');
+  assert.equal(await page.locator('#size').inputValue(), '100');
   await page.locator('#sceneSelect').selectOption('sierpinski');
-  assert.equal(await page.locator('[data-music-route="2"] option[value="color"]').textContent(), 'Structure color');
   await frames(120);
   await page.screenshot({path:'/tmp/phosphor-mappings-sierpinski.png'});
   await page.locator('#disconnectAudio').click();
@@ -169,8 +285,8 @@ try {
   await page.locator('#autopilot').click();
   await page.locator('#sceneSelect').selectOption('cavern');
   await page.locator('#trails').evaluate(el => {el.value=35;el.dispatchEvent(new Event('input',{bubbles:true}));});
-  await page.locator('#renderQuality').selectOption('0.75');
-  await checkResolution(0.75);
+  await page.locator('#pictureSharpness').selectOption('full');
+  await checkResolution();
   await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
   await page.evaluate(() => {
     const key = 'phosphor-min-last-v1', saved = JSON.parse(localStorage.getItem(key));
@@ -178,19 +294,8 @@ try {
     localStorage.setItem(key, JSON.stringify(saved));
   });
   await page.reload({waitUntil:'domcontentloaded',timeout:20000}); await frames(5);
-  assert.equal(await page.locator('#sceneDetail').inputValue(), 'full');
-  assert.equal(await page.locator('#renderQuality').inputValue(), '0.75');
-  await page.locator('#musicMappings summary').click();
-  assert.equal(await page.getByLabel('Mapping 1 sound', {exact:true}).inputValue(), 'bass');
-  assert.equal(await page.getByLabel('Mapping 2 sound', {exact:true}).inputValue(), 'bpm');
-  assert.equal(await page.getByLabel('Mapping 1 effect', {exact:true}).inputValue(), 'spin');
-  assert.equal(await page.getByLabel('Mapping 1 strength', {exact:true}).inputValue(), '37');
-  assert.equal(await page.getByLabel('Mapping 1 strength', {exact:true}).evaluate(el => el.style.getPropertyValue('--b')), '37%');
-  await page.getByRole('button', {name:'Reset mappings',exact:true}).click();
-  assert.equal(await page.getByLabel('Mapping 1 sound', {exact:true}).inputValue(), 'bpm');
-  assert.equal(await page.getByLabel('Mapping 1 strength', {exact:true}).evaluate(el => el.style.getPropertyValue('--b')), '85%');
-  await page.locator('#musicMappings summary').click();
-  await checkResolution(0.75);
+  assert.equal(await page.locator('#pictureSharpness').inputValue(), 'full');
+  await checkResolution();
   assert.equal(await page.locator('#sceneSelect').inputValue(), 'cavern');
   assert.equal(await page.locator('#trails').inputValue(), '35');
   await page.waitForFunction(() => document.querySelector('#currentTexture').textContent === 'Cavern');
@@ -219,8 +324,7 @@ try {
   assert.deepEqual(await page.evaluate(() => window.__audioCalls), []);
   await page.screenshot({path:'/tmp/phosphor-minimal.png'});
   await page.setViewportSize({width:390,height:844}); await frames(3);
-  await page.locator('#musicMappings summary').click();
-  await page.locator('#musicMappings').scrollIntoViewIfNeeded();
+  await page.locator('.panel').evaluate(el=>{el.scrollTop=0;});
   await page.screenshot({path:'/tmp/phosphor-mappings-mobile.png'});
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   assert.deepEqual(errors, []);
@@ -240,5 +344,5 @@ try {
   await unsupported.locator('#msg').waitFor({state:'visible'});
   assert.match(await unsupported.locator('#msg').textContent(), /needs WebGL 2/);
   await unsupported.close();
-  console.log('PASS: stable first paint, visible WebGL errors, native feedback resolution, viewport resizing, fullscreen, HiDPI, saved resolution scale, 3D startup, click-to-share audio without microphone access, disconnect, missing audio, cancellation, ended/stale streams, unsupported browser, saved visual defaults, autopilot, responsive layout, no page errors.');
+  console.log('PASS: stable first paint, visible WebGL errors, upstream picture sharpness, viewport resizing, fullscreen, HiDPI, saved sharpness, 3D startup, click-to-share audio without microphone access, disconnect, missing audio, cancellation, ended/stale streams, unsupported browser, saved visual defaults, autopilot, responsive layout, no page errors.');
 } finally { if (browser) await browser.close(); await new Promise(r => server.close(r)); }

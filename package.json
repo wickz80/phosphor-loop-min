@@ -25,7 +25,13 @@
     "test:scene-recovery": "node tests/reference-recovery.mjs",
     "perf": "node tools/perf/benchmark.mjs",
     "test:render-quality": "node tests/render-quality.mjs",
-    "test:shaders": "node tests/shader-equivalence.mjs"
+    "test:visual-defaults": "node tests/visual-defaults.mjs",
+    "test:lfo": "node tests/lfo.mjs",
+    "test:onset-clock": "node tests/onset-clock.mjs",
+    "test:control-dependencies": "node tests/control-dependencies.mjs",
+    "test:video-grade": "node tests/video-grade.mjs",
+    "test:shaders": "node tests/shader-equivalence.mjs",
+    "test:control-automation": "node tests/control-automation.mjs"
   },
   "dependencies": {
     "essentia.js": "0.1.3",

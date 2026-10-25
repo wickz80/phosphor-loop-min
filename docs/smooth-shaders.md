@@ -1,3 +1,5 @@
+> Historical notes: the custom Smooth rendering paths described below were replaced by the upstream rendering port. See [upstream audit](upstream-audit.md) for current behavior.
+
 # Shader simplification and Smooth mode
 
 Follow-up on 2026-10-19. Previous camera rollback and music mappings are preserved.
