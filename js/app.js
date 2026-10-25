@@ -1554,7 +1554,7 @@ $('#neutral').addEventListener('click', neutral);
 // loop being edited only; right-click it (or press and hold it on a touchscreen) to hold it on both loops at once.
 // prep: the next look being tried out of sight (Check each look); glide: a look changed in place, waiting to be
 // looked at; rush: bring the next look as soon as one is ready (Next look, or the white-out watch)
-const ap = { due: 0, span: 1, on: false, next: 0, quick: 0, beatWait: null, pins: new Set(), pinVal: {}, picIn: 0, prep: null, glide: null, glideRedo: 0, rush: false };
+const ap = { due: 0, span: 1, on: false, next: 0, quick: 0, beatWait: null, pins: new Set(), pinVal: {}, prep: null, glide: null, glideRedo: 0, rush: false };
 // What each pin holds. Pinning the main input keeps its pattern and Only movement too; pinning Zoom keeps its edges.
 const PINS = {
   in1: { name: 'Main input', fields: ['in1', 'form', 'specRound', 'motion'] },
@@ -2065,7 +2065,6 @@ function setAutopilot(on, quiet) {
     ap.next = performance.now() + Math.min(7000, apEverySec() * 1000);
     ap.due = ap.next;
     ap.span = ap.next - performance.now();
-    ap.picIn = apPicGap();
     // Anything outside the configured fader limits eases just inside them
     apIntoLimits();
     settleDevices();
@@ -2489,37 +2488,8 @@ function apStep(now, onBeat) {
     if (mixSet && !ap.pins.has('view')) mix.tgt.view = came === 'B' ? 100 : 0;
   }
   if (vid.video && vid.video.paused && !vidUserPaused && uses('video')) vid.video.play().catch(() => {});
-  apPicture(came);
   syncUI();
   apStatus();
-}
-// Every 1 to 3 new looks (picked at random each time), Autopilot also puts in a different nature picture,
-// from the kind chosen in the gallery, the same way Shuffle does. It leaves a picture of your own in place,
-// and leaves the picture alone when Picture is switched off under Inputs Autopilot can use.
-function apPicGap() { return 1 + Math.floor(Math.random() * 3); }
-// With a taste to follow, a look brought back from a picture you liked brings its nature picture back too, and
-// otherwise the new picture is picked from a dozen at random by which pictures and kinds you've liked.
-// (k: the loop whose new look just came in, if one did)
-function apPicture(k) {
-  const came = k && loops[k], want = came && came.favMix && came.favMix.nat;
-  if (want && !nat.own && apAllowed('picture') && tasteHow() && (came.tgt.in1 === 'picture' || came.tgt.in2 === 'picture')) {
-    natList().then(() => {
-      const i = nat.pics.findIndex((p) => p.f === want);
-      if (i >= 0 && i !== nat.cur) natPick(i, true);
-    }).catch(() => {});
-    ap.picIn = apPicGap();
-    return;
-  }
-  if (ap.picIn > 1) { ap.picIn--; return; }
-  ap.picIn = apPicGap();
-  if (nat.own || !apAllowed('picture')) return;
-  natList().then(() => {
-    const shown = natShown().filter((i) => i !== nat.cur);
-    if (!shown.length) return;
-    if (!tasteHow()) { natPick(pick(shown), true); return; }
-    const M = tasteModel(), few = shown.sort(() => Math.random() - 0.5).slice(0, 12);
-    natPick(tastePickBy(few, (i) => Math.tanh(((M.pref['natf:' + nat.pics[i].f] || 0) * 1.5 + (M.pref['natc:' + nat.pics[i].c] || 0) * 1.2) / 2)), true);
-  }).catch(() => { /* offline before the list was ever saved: keep the picture there is */ });
 }
 // Next look (beside the Autopilot buttons, or the L key): Autopilot's next new look straight away, cutting in
 // fast the way a look does on a beat, and the countdown to the one after starts again. If Autopilot is off it
@@ -2659,7 +2629,7 @@ const tasteCount = (votes) => votes.filter((v) => v.src === 'up' || v.src === 'd
 //  - the plain words: its inputs, which effects are on (and how strongly, and how many), its mirror, where Zoom,
 //    Spin, Trails, Color shift and Warp sit, and the smaller settings (Input size, Blend, softness, the pattern of
 //    Wave or Shape, Grow's size and Time warp's direction, Only movement, the edges when zoomed out, which way the
-//    picture drifts, its brightness, the Spectrograph's style; and for the whole picture, which nature picture shows)
+//    picture drifts, its brightness, the Spectrograph's style; and for the whole picture, how the two loops are mixed)
 //  - the deep words, which tie settings to each other the way they appeared together: the input with each effect,
 //    with its zoom, spin, mirror, trails and color ("Shape with Melt", "Shape zoomed in"), the effects that come
 //    together, and the look as a whole (input, effects, mirror, zoom and spin all at once)
@@ -2750,9 +2720,6 @@ function tasteBlendPic(a, b) {
 // The whole picture's settings: both loops' looks (kept short) and how they're shown and fed into each other
 function tasteSceneNow() {
   const sc = { A: tasteLook('A'), B: tasteLook('B'), mix: { view: Math.round(mix.cur.view), xab: Math.round(mix.cur.xab), xba: Math.round(mix.cur.xba) } };
-  // Which nature picture is showing, when a loop uses the picture (a picture of your own isn't kept)
-  const p = !nat.own && nat.pics && nat.pics[nat.cur];
-  if (p && uses('picture')) sc.nat = { f: p.f, c: p.c };
   return sc;
 }
 // Which looks are on the loops: a rating is "the same picture" only while neither loop has a new look
@@ -2824,11 +2791,6 @@ function sceneFeats(sc) {
     add('rel:spin:' + (sa && sb ? (sa === sb ? 'same' : 'counter') : 'calm'), 0.7);
     add('rel:mirror:' + (L.A.mirror === L.B.mirror ? 'same' : 'apart'), 0.5);
   }
-  // Which nature picture, when a loop that reaches the screen uses it (its kind counts too: Ocean, Birds...)
-  if (sc.nat && ['A', 'B'].some((k) => L[k] && reach[k] > 0.25 && (L[k].in1 === 'picture' || L[k].in2 === 'picture'))) {
-    add('natc:' + sc.nat.c, 0.8);
-    add('natf:' + sc.nat.f, 1);
-  }
   // How they act on each other
   const fed = Math.max(vis.A > 0.25 ? feedInto.A : 0, vis.B > 0.25 ? feedInto.B : 0);
   add('feed:' + (fed > 0.4 ? 'strong' : fed > 0.08 ? 'some' : 'none'), 1);
@@ -2897,7 +2859,7 @@ function tasteModel() {
 }
 // How much each kind of word counts: a whole pair of looks most, then a whole look, inputs, effects and how the
 // loops meet and act on each other
-const TASTE_WEIGHT = { natf: 1.5, natc: 1.2, pl: 2.5, look: 2, pxx: 1.2, in: 1.6, world: 1.6, fx: 1.3, pair: 1.3, pfx: 1.3, inter: 1.3, feed: 1.3, pi: 1.2, px: 1.1, lk: 1.1 };
+const TASTE_WEIGHT = { pl: 2.5, look: 2, pxx: 1.2, in: 1.6, world: 1.6, fx: 1.3, pair: 1.3, pfx: 1.3, inter: 1.3, feed: 1.3, pi: 1.2, px: 1.1, lk: 1.1 };
 // How much a whole picture's settings match what you've liked, from -1 to 1. Inputs, effects, and how the loops
 // meet and act on each other count most. It adds up (rather than averages), so a picture with both loops in it
 // isn't marked down just for having more in it.
@@ -3000,7 +2962,7 @@ function tasteFavLooks(k, M) {
     if (!apUsable(sc.in1) || Math.random() < 0.15 * (1 - f)) { sc.in1 = apPick(apPool()); delete sc.size; }
     if (sc.in2 && sc.in2 !== 'none' && (!apUsable(sc.in2) || sc.in2 === sc.in1)) sc.in2 = 'none';
     const look = apFinish(sc, k, was);
-    look.favMix = { both, into: into[from], out: fs.B ? into[from === 'A' ? 'B' : 'A'] : 0, nat: fs.nat ? fs.nat.f : null };
+    look.favMix = { both, into: into[from], out: fs.B ? into[from === 'A' ? 'B' : 'A'] : 0 };
     out.push(look);
   }
   return out;
@@ -3792,9 +3754,6 @@ $('#useCard').addEventListener('click', () => {
   picAspect = 4 / 3;
   $('#picName').textContent = 'the test card';
   $('#useCard').hidden = true;
-  natNoCredit();
-  nat.own = false;
-  nat.ask++;   // nor the test card
 });
 function downscale(img) {
   const max = 1024;
@@ -3836,9 +3795,6 @@ function loadFile(file) {
       URL.revokeObjectURL(url);
       $('#picName').textContent = file.name;
       $('#useCard').hidden = false;
-      natNoCredit();
-      nat.own = true;
-      nat.ask++;   // a nature picture still on its way doesn't replace this one
       feedInto('picture', targetLoop);
       toast(`Feeding ${file.name} into loop ${targetLoop}.`);
     };
@@ -3870,164 +3826,6 @@ function loadFile(file) {
   }
 }
 function escapeHTML(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-
-/* ================= nature pictures ================= */
-// About 500 photos from Wikimedia Commons' Featured Pictures live in the nature folder, listed in
-// nature/pictures.json. The list loads the first time it's needed, the small thumbnails only when the
-// gallery opens, and a full picture only when it's picked.
-const nat = { pics: null, cats: [], cur: -1, cat: 'all', req: null, built: false, ask: 0, own: false };   // own: a picture of the person's own is in
-const NAT_TAB_KEY = 'phosphor-nature-tab', NAT_LAST_KEY = 'phosphor-nature-last';
-try { nat.cat = localStorage.getItem(NAT_TAB_KEY) || 'all'; } catch (_) { /* fine, start on All */ }
-const natDlg = $('#nat'), natGrid = $('#natGrid'), natTabs = $('#natTabs');
-function natList() {
-  if (!nat.req) {
-    nat.req = fetch('nature/pictures.json')
-      .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then((d) => {
-        nat.pics = d.pics || [];
-        nat.cats = d.cats || [];
-        if (nat.cat !== 'all' && !nat.cats.some((c) => c.id === nat.cat)) nat.cat = 'all';
-        return nat.pics;
-      })
-      .catch((e) => { nat.req = null; throw e; });
-  }
-  return nat.req;
-}
-function natNoList() { toast('The nature pictures couldn’t be loaded. They need internet the first time.'); }
-// The pictures in the chosen kind (or all of them), as positions in the full list
-function natShown() {
-  const all = nat.pics.map((_, i) => i);
-  return nat.cat === 'all' ? all : all.filter((i) => nat.pics[i].c === nat.cat);
-}
-function natNoCredit() {
-  nat.cur = -1;
-  try { localStorage.removeItem(NAT_LAST_KEY); } catch (_) { /* fine */ }
-  $('#picCredit').hidden = true;
-  natMark();
-}
-function natMark() {
-  for (const t of natGrid.children) t.setAttribute('aria-current', String(+t.dataset.i === nat.cur));
-}
-// quiet: put the picture in place without switching any loop to it (used when the page opens)
-function natPick(i, quiet) {
-  const p = nat.pics && nat.pics[i];
-  if (!p) return;
-  const ask = ++nat.ask;
-  const img = new Image();
-  img.decoding = 'async';
-  img.onload = () => {
-    if (ask !== nat.ask) return;   // a later pick overtook this one
-    uploadTo(picTex, downscale(img));
-    picAspect = img.naturalWidth / img.naturalHeight;
-    $('#picName').textContent = p.n;
-    $('#useCard').hidden = false;
-    nat.cur = i;
-    nat.own = false;
-    const credit = $('#picCredit');
-    credit.innerHTML = `Photo: ${escapeHTML(p.by)} · <a href="${escapeHTML(p.src)}" target="_blank" rel="noopener">${escapeHTML(p.lic)}</a>`;
-    credit.hidden = false;
-    natMark();
-    try { localStorage.setItem(NAT_LAST_KEY, p.f); } catch (_) { /* fine */ }
-    if (quiet) return;
-    const was = loops[edit].tgt.in1 === 'picture' || loops[edit].tgt.in2 === 'picture';
-    feedInto('picture');
-    if (was) showOSD('PICTURE', p.n.toUpperCase());
-  };
-  img.onerror = () => { if (ask === nat.ask && !quiet) toast('That picture couldn’t be loaded. It needs internet the first time.'); };
-  img.src = `nature/${p.f}.jpg`;
-}
-function natStep(dir) {
-  natList().then(() => {
-    const shown = natShown();
-    if (!shown.length) return;
-    const at = shown.indexOf(nat.cur);
-    const next = at < 0 ? (dir > 0 ? 0 : shown.length - 1) : (at + dir + shown.length) % shown.length;
-    natPick(shown[next]);
-  }).catch(natNoList);
-}
-function natShuffle() {
-  natList().then(() => {
-    const shown = natShown().filter((i) => i !== nat.cur);
-    if (shown.length) natPick(pick(shown));
-  }).catch(natNoList);
-}
-function natBuild() {
-  if (nat.built) return;
-  nat.built = true;
-  const count = (id) => (id === 'all' ? nat.pics.length : nat.pics.filter((p) => p.c === id).length);
-  for (const c of [{ id: 'all', n: 'All' }, ...nat.cats]) {
-    const b = document.createElement('button');
-    b.className = 'chip';
-    b.dataset.cat = c.id;
-    b.innerHTML = `${escapeHTML(c.n)} <b>${count(c.id)}</b>`;
-    b.addEventListener('click', () => {
-      nat.cat = c.id;
-      try { localStorage.setItem(NAT_TAB_KEY, c.id); } catch (_) { /* fine */ }
-      natFilter();
-      natDlg.scrollTop = 0;
-    });
-    natTabs.appendChild(b);
-  }
-  const frag = document.createDocumentFragment();
-  nat.pics.forEach((p, i) => {
-    const b = document.createElement('button');
-    b.className = 'nat-tile';
-    b.dataset.i = i;
-    b.title = p.n;
-    b.innerHTML = `<img loading="lazy" decoding="async" alt="" src="nature/${escapeHTML(p.f)}-t.jpg"><span>${escapeHTML(p.n)}</span>`;
-    frag.appendChild(b);
-  });
-  natGrid.appendChild(frag);
-  natGrid.addEventListener('click', (e) => {
-    const t = e.target.closest('.nat-tile');
-    if (!t) return;
-    natPick(+t.dataset.i);
-    closeNat();
-  });
-}
-function natFilter() {
-  for (const b of natTabs.children) b.setAttribute('aria-pressed', String(b.dataset.cat === nat.cat));
-  for (const t of natGrid.children) t.hidden = nat.cat !== 'all' && nat.pics[+t.dataset.i].c !== nat.cat;
-  $('#natCount').textContent = `${natShown().length} PICTURES`;
-}
-let natReturn = null;
-function openNat() {
-  natList().then(() => {
-    if (!natDlg.hidden) return;
-    natBuild();
-    natFilter();
-    natMark();
-    $('#natHint').textContent = `Tap a picture to feed it into loop ${edit}. ◀ ▶ and Shuffle beside Picture flip through this kind without opening the gallery.`;
-    natReturn = document.activeElement;
-    natDlg.hidden = false;
-    document.documentElement.style.overflow = 'hidden';
-    const cur = natGrid.querySelector('[aria-current="true"]:not([hidden])');
-    if (cur) cur.scrollIntoView({ block: 'center' }); else natDlg.scrollTop = 0;
-    (cur || $('#natClose')).focus({ preventScroll: true });
-  }).catch(natNoList);
-}
-function closeNat() {
-  if (natDlg.hidden) return;
-  natDlg.hidden = true;
-  document.documentElement.style.overflow = '';
-  if (natReturn && natReturn.focus) natReturn.focus();
-}
-$('#natOpen').addEventListener('click', openNat);
-$('#natClose').addEventListener('click', closeNat);
-$('#natShuffle').addEventListener('click', natShuffle);
-$('#natShuffle2').addEventListener('click', () => { natShuffle(); closeNat(); });
-$('#natPrev').addEventListener('click', () => natStep(-1));
-$('#natNext').addEventListener('click', () => natStep(1));
-natDlg.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { e.stopPropagation(); closeNat(); }
-  else e.stopPropagation(); // keep the keys from firing while browsing
-});
-// The nature picture in use last time comes back when the page opens, so a saved look picks up where it was
-(() => {
-  let last = null;
-  try { last = localStorage.getItem(NAT_LAST_KEY); } catch (_) { /* fine */ }
-  if (last) natList().then((pics) => { const i = pics.findIndex((p) => p.f === last); if (i >= 0 && nat.cur < 0 && !nat.own) natPick(i, true); }).catch(() => {});
-})();
 
 const dropEl = $('#drop');
 let dragDepth = 0;
@@ -4372,7 +4170,7 @@ const RECIPES = [
     how: 'TEXT · ZOOM IN 32 · TRAILS 88 · COLOR 16',
     sw: 'radial-gradient(ellipse 46% 20% at 50% 50%,#fff3b0 0 30%,transparent 32%),repeating-radial-gradient(ellipse at 50% 50%,#140a2a 0 6px,#ff7ac6 6px 8px,#6a2bd9 8px 10px)',
     patch: { A: { in1: 'text', size: 80, zoom: 32, spin: 0, trails: 88, color: 16, blur: 0.05 } } },
-  { name: 'Living picture', after: 'Try a few nature pictures with ◀ ▶ under Picture, or slide Grow up and down.',
+  { name: 'Living picture', after: 'Load your own picture under Picture, or slide Grow up and down.',
     text: 'Patterns grow over the picture like the markings on a shell or a fish, starting from its outlines and slowly spreading.',
     how: 'PICTURE · GROW 45 FINE · TRAILS 93',
     sw: 'repeating-linear-gradient(60deg,#06120f 0 3px,#ffcf6b 3px 5px,#06120f 5px 7px),radial-gradient(circle,#3bffb0,#06120f)',
@@ -5709,71 +5507,7 @@ function restoreSession() {
 
 
 
-// Show setup can save every nature picture ahead of time, for a show without internet (see sw.js)
-let natSaving = false;
-async function natSaveStatus() {
-  if (APP || !swOK || !window.caches) return;
-  $('#natSaveRow').hidden = false;
-  try {
-    const pics = await natList();
-    const cache = await caches.open('pl-nature');
-    const have = new Set((await cache.keys()).map((r) => r.url));
-    const want = natFiles(pics);
-    const missing = want.filter((u) => !have.has(u));
-    if (natSaving) return;
-    if (!missing.length) {
-      say($('#natSaveNote'), `All <b>${pics.length}</b> nature pictures are saved on this computer, so they work without internet.`);
-      $('#natSave').hidden = true;
-    } else {
-      $('#natSave').hidden = false;
-    }
-  } catch (_) { /* the list isn't reachable yet; the button tries again when pressed */ }
-}
-function natFiles(pics) {
-  return pics.flatMap((p) => [`nature/${p.f}.jpg`, `nature/${p.f}-t.jpg`]).map((u) => new URL(u, location.href).href);
-}
-$('#natSave').addEventListener('click', async () => {
-  if (natSaving) return;
-  natSaving = true;
-  const btn = $('#natSave'), note = $('#natSaveNote');
-  btn.disabled = true;
-  try {
-    const pics = await natList();
-    const cache = await caches.open('pl-nature');
-    const have = new Set((await cache.keys()).map((r) => r.url));
-    const todo = natFiles(pics).filter((u) => !have.has(u));
-    let done = 0, failed = 0;
-    const total = todo.length;
-    const step = async () => {
-      while (todo.length) {
-        const u = todo.shift();
-        try {
-          const r = await fetch(u);
-          if (r.ok) await cache.put(u, r); else failed++;
-        } catch (_) { failed++; }
-        done++;
-        if (done % 10 === 0 || done === total) say(note, `Saving the nature pictures… <b>${Math.round(done / total * 100)}%</b>`);
-      }
-    };
-    say(note, 'Saving the nature pictures… <b>0%</b>');
-    await Promise.all([step(), step(), step(), step(), step(), step()]);
-    natSaving = false;
-    if (failed) {
-      say(note, `${failed} files couldn’t be saved (the connection may have dropped). Press the button again to finish.`, true);
-      btn.disabled = false;
-    } else {
-      btn.disabled = false;
-      natSaveStatus();
-    }
-  } catch (_) {
-    natSaving = false;
-    btn.disabled = false;
-    say(note, 'The nature pictures couldn’t be reached. Connect to the internet and try again.', true);
-  }
-});
-
 function offlineStatus() {
-  natSaveStatus();
   if (APP) { offlineNote.textContent = 'The app keeps a copy on this phone, so it opens without internet. Only the phone link needs it.'; return; }
   if (!swOK) {
     offlineNote.textContent = location.protocol === 'file:'
@@ -5866,7 +5600,7 @@ const GROUP_NAMES = { inputs: 'Input', apInputs: 'Autopilot uses', mirror: 'Mirr
                       specShape: 'Spectrograph', specListen: 'Spectrograph hears', textStyle: 'Text style', growSize: 'Grow size', timeShape: 'Time warp' };
 const NOT_LEARNABLE = '#showGroup *, .tabs button, .group-toggle, .pre-del, .pre-ren, #adminBox *, #adminLogin *, .pre-confirm button, #presetForm button, #presetSave, ' +
   '.tp-ic, #tasteRenForm *, #sessionForm *, #tasteOpen, ' +
-  '#foldAll, #openAll, #full, #pickPic, #pickVid, #scrSelf, #scrOther, [data-snd="system"], #guideBtn, #natOpen';
+  '#foldAll, #openAll, #full, #pickPic, #pickVid, #scrSelf, #scrOther, [data-snd="system"], #guideBtn';
 function labelFor(el) {
   const l = document.querySelector(`label[for="${el.id}"]`);
   return l ? l.textContent.replace(/\s+/g, ' ').trim() : el.id;

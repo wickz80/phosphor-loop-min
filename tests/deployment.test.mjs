@@ -10,9 +10,11 @@ test('deployment contains browser assets, keeps relative URLs and stamps cache r
  const parent=await mkdtemp(join(tmpdir(),'phosphor-package-'));
  try{
   const out=await packageSite(join(parent,'site'),{revision:'abcdef1234567'});
-  assert.deepEqual((await readdir(out)).sort(),['index.html','sw.js','icon-180.png','icon-192.png','styles','js','vendor','nature'].sort());
+  assert.deepEqual((await readdir(out)).sort(),['index.html','sw.js','icon-180.png','icon-192.png','styles','js','vendor'].sort());
   const html=await readFile(join(out,'index.html'),'utf8');
   assert.match(html,/js\/shaders\.js\?v=abcdef1234567/);
+  assert.doesNotMatch(html,/id="(?:nat|natOpen|natSave|natGrid)"/);
+  assert.match(html,/id="pickPic"/);
   assert.match(html,/js\/lfo\.js\?v=abcdef1234567/);
   assert.doesNotMatch(html,/(?:src|href)="\/(?:js|styles)\//);
   assert.match(await readFile(join(out,'sw.js'),'utf8'),/app-abcdef1234567/);
@@ -35,5 +37,5 @@ test('the /loop/ service worker deletes only obsolete caches from its own scope'
  });
  handlers.install({waitUntil:promise=>{work=promise;}});await work;
  handlers.activate({waitUntil:promise=>{work=promise;}});await work;
- assert.deepEqual(deleted,['phosphor-loop:/loop/:app-old']);
+ assert.deepEqual(deleted,['phosphor-loop:/loop/:app-old','phosphor-loop:/loop/:nature']);
 });

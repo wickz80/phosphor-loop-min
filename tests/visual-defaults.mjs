@@ -48,7 +48,7 @@ Object.assign(context,{
   loadPreset:({data})=>{v.patchLoop('A',data.A,true);v.patchLoop('B',data.B,true);},
   showOSD:()=>{},toast:()=>{},setAutopilot:()=>{},
 });
-vm.runInNewContext(slice('function restoreSession()','// Show setup')+'this.restore = restoreSession;',context);
+vm.runInNewContext(slice('function restoreSession()','function offlineStatus()')+'this.restore = restoreSession;',context);
 assert.equal(context.restore(),true);
 assert.equal(context.loops.A.tgt.textureLook,'Fractal garden','named texture survives reload');
 assert.equal(context.loops.A.tgt.in1,'shape');assert.equal(context.loops.A.tgt.julia,100);assert.equal(context.loops.A.tgt.trails,90,'saved deliberate settings survive');

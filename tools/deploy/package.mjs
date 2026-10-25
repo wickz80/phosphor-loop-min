@@ -1,7 +1,7 @@
 import {cp,mkdir,readdir,readFile,writeFile} from 'node:fs/promises';
 import {resolve,relative,sep,isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
-const runtimeFiles=['index.html','sw.js','icon-180.png','icon-192.png','styles','js','vendor','nature'];
+const runtimeFiles=['index.html','sw.js','icon-180.png','icon-192.png','styles','js','vendor'];
 export async function packageSite(destination,{revision}={}){
  const root=fileURLToPath(new URL('../../',import.meta.url)),out=resolve(destination);
  const distance=relative(root,out);
