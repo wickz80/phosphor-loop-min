@@ -82,7 +82,7 @@ update. There is no separate one-off IAM bootstrap template for this app.
 
 ## Verification
 
-- `node --test tests/deployment.test.mjs`: runtime packaging, revision stamps,
+- `node --experimental-strip-types --test tools/deploy/package.test.ts sw.test.ts`: runtime packaging, revision stamps,
   relative URLs, and service-worker cache isolation.
 - `TEST_BASE_PATH=/loop/ npm run test:minimal`: startup, audio workers, mappings,
   saved settings, and controls under the public prefix.

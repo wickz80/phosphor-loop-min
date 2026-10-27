@@ -24,7 +24,7 @@ Unit tests for migrated code are `src/**/*.test.ts`, typechecked with `tsconfig.
 
 ## Verified
 
-After the latest runtime/tooling changes, `npm run build`, `npm run verify` and `git diff --check` passed. This covers six colocated TypeScript test files, legacy state/math regressions, deployment/cache packaging and app/audio wiring checks. No statement/branch coverage percentage is claimed.
+After the latest changes, `npm run verify` covers named TypeScript suites for migrated modules, legacy mapping/defaults, deployment/cache packaging and app/audio wiring. All non-browser regressions use `describe`/`it` with fresh fixtures and separate setup/execution/assertion blocks; simulation helpers return observations instead of hiding assertions. Tests are colocated beside source, including legacy JavaScript sources; production packaging excludes `.test.ts` files. The latest verification passes 60 named cases across 12 suites. No statement/branch coverage percentage is claimed.
 
 Browser/GPU verification is pending. Capture-server tests were attempted earlier but could not bind localhost (`listen EPERM`) in this environment. This is a sandbox restriction; do not claim browser rendering, device behavior or perceived audio latency has passed. Current browser scripts hardcode a macOS Chrome path; portability remains backlog work.
 

@@ -34,8 +34,6 @@ jobs:
       - name: Read deployment configuration
         id: config
         run: node tools/deploy/config.mjs >> "$GITHUB_OUTPUT"
-      - name: Check deployment packaging and cache isolation
-        run: node --test tests/deployment.test.mjs
       - name: Package browser assets
         env:
           COMMIT_SHA: ${{ github.sha }}

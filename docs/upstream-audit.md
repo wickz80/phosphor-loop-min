@@ -51,7 +51,7 @@ Passed here:
 - Local-main comparison: all exposed named 2D patches, clean world starters and Patchwork shader match the originals.
 - Syntax checks for modified JavaScript and `git diff --check`.
 - `npm run test:render-quality`: actual app controller, resolution modes, capture override, memory limits, adaptive frame windows, hidden/frozen handling, failed-level retry delay.
-- `node --test tests/deployment.test.mjs`: packaged browser assets and scoped offline cache revisions.
+- `node --experimental-strip-types --test tools/deploy/package.test.ts sw.test.ts`: packaged browser assets and scoped offline cache revisions.
 - `npm run test:mappings`: mapping behavior and continuous BPM clock.
 - Camera math simulation: all six fractals move with finite camera vectors over 600 Glide frames.
 - Generated source comparison: all 15 world/fractal shaders match local main apart from the preserved pitch material tint.

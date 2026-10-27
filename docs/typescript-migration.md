@@ -14,7 +14,7 @@ The migration is incremental. Converted modules live in `src/`; the larger brows
 | `src/control-dependencies.ts` | `js/control-dependencies.js` |
 | `src/video-grade.ts` | `js/video-grade.js` |
 
-Shared browser and dependency interfaces live in `src/browser-globals.d.ts`. The LFO DOM adapter, state transitions and engine are now TypeScript. Unit tests are colocated as `src/**/*.test.ts`, checked by `tsconfig.tests.json` and run with Node’s TypeScript stripping (Node 22.18+). They and the shared VM helper are excluded from production builds. Remaining legacy integration checks still live under `tests/`. Browser scripts retain their existing global API; the engine loads before its UI adapter. No bundler or framework is required.
+Shared browser and dependency interfaces live in `src/browser-globals.d.ts`. The LFO DOM adapter, state transitions and engine are now TypeScript. Unit tests are colocated as `*.test.ts` beside their sources in `src/`, `js/` and `tools/`, checked by `tsconfig.tests.json` and run with Node’s TypeScript stripping (Node 22.18+). They and the shared VM helper are excluded from production builds. Legacy app/audio integration checks are also colocated TypeScript tests; remaining browser/capture suites live under `tests/`. Browser scripts retain their existing global API; the engine loads before its UI adapter. No bundler or framework is required.
 
 Generated scripts are committed so plain static previews, capture tools and offline loading continue to work. Do not hand-edit them. `npm run build` checks types and emits formatted browser JavaScript; `npm run build:check` compares the expected output without changing files. The deployed site includes JavaScript, not TypeScript sources or development dependencies.
 
@@ -52,4 +52,8 @@ Shader source remains GLSL strings; TypeScript cannot check shader syntax or ren
 
 ## Verification commands
 
-`npm run verify` runs checks plus all non-browser regressions. `test:unit` means colocated TypeScript unit tests only; `test:legacy` preserves the remaining JavaScript state/math regressions, and `test:integration` covers packaging and app/audio wiring. `test:browser` and `capture:test` are separate. No coverage percentage is claimed.
+`npm run verify` runs checks plus all non-browser regressions. `test:unit` means colocated TypeScript unit tests only; `test:legacy` runs typed regression tests for state/math code whose implementation remains JavaScript, and `test:integration` covers app/audio wiring. Packaging and cache-isolation tests are colocated TypeScript cases in `test:unit`. `test:browser` and `capture:test` are separate. No coverage percentage is claimed.
+
+## Unit test structure
+
+Use `describe` to group a module's behavior and `it` to name each independently runnable case. Inside a case, separate setup, execution and assertions with blank lines (Arrange / Act / Assert). Mutable state and recording callbacks belong in a fresh local fixture for each case; immutable APIs may be shared. Simulation helpers return observations rather than hiding assertions inside the simulation loop. Do not place executable assertions at file scope or print custom PASS messages in unit tests: let the runner identify the failing behavior.

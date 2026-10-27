@@ -24,6 +24,7 @@ export async function packageSite(destination, { revision } = {}) {
       recursive: true,
       errorOnExist: true,
       force: false,
+      filter: (source) => !source.endsWith('.test.ts'),
     });
   if (revision) {
     if (!/^[a-f0-9]{7,40}$/.test(revision))

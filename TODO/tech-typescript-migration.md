@@ -23,7 +23,7 @@ Prioritize coherent ownership, reproducible checks and understandable code over 
 - Beat clock; tests cover continuous timing and rejected stale/duplicate/offbeat events.
 - Effect prerequisites and generated-scene normalization.
 - Video grading state, bounds, defaults, storage validation and isolated reset.
-- Migrated unit tests are colocated `src/**/*.test.ts`, typechecked separately and excluded from browser output. Legacy integration checks still live in `tests/`.
+- Migrated unit tests are colocated `src/**/*.test.ts`, typechecked separately and excluded from browser output. Legacy app/audio checks are now colocated TypeScript tests beside their JavaScript sources; packaging excludes test files.
 
 ## Project cleanup still outstanding
 

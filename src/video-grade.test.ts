@@ -1,64 +1,86 @@
 import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 import { loadBrowserScripts } from '../tests/support/browser-scripts.ts';
-function setup(saved: string | null): VideoGradeApi {
+
+function createGrade(saved: string | null = null): VideoGradeApi {
   return loadBrowserScripts(['video-grade'], saved).PhosphorVideoGrade;
 }
-const grade = setup(null);
-assert.equal(grade.state.videoGamma, 1);
-assert.equal(grade.state.videoExposure, 0);
-for (const id of [
-  'videoContrast',
-  'videoSaturation',
-  'videoRed',
-  'videoGreen',
-  'videoBlue',
-] as const)
-  assert.equal(grade.state[id], 1, 'neutral ' + id);
-for (const id of ['videoHue', 'videoSepia', 'videoGradient'] as const)
-  assert.equal(grade.state[id], 0, 'neutral ' + id);
-assert.equal(
-  grade.setSlider('spin', 40),
-  false,
-  'texture controls are not global'
-);
-assert.equal(grade.setSlider('videoGamma', 0), true);
-assert.equal(grade.state.videoGamma, 0.25, 'gamma never reaches zero');
-grade.setSlider('videoRed', 1.7);
-grade.setSlider('videoGradient', 1000);
-assert.equal(grade.state.videoGradient, 100);
-grade.setSlider('videoExposure', NaN);
-assert.equal(
-  grade.state.videoExposure,
-  0,
-  'invalid runtime writes do not poison output'
-);
-assert.equal(grade.resetSlider('videoGamma'), true);
-assert.equal(grade.state.videoGamma, 1);
-assert.equal(
-  grade.state.videoRed,
-  1.7,
-  'single reset leaves other global controls intact'
-);
-assert.equal(grade.resetSlider('spin'), false);
-const restored = setup(JSON.stringify(grade.state));
-assert.equal(restored.state.videoRed, 1.7);
-assert.equal(restored.state.videoGradient, 100);
-restored.reset();
-assert.equal(
-  JSON.stringify(restored.state),
-  JSON.stringify(restored.defaults()),
-  'reset restores identity grading'
-);
-assert.equal(
-  setup('{broken').state.videoGamma,
-  1,
-  'corrupt saved configuration starts neutral'
-);
-assert.equal(
-  setup(JSON.stringify({ videoGamma: 'bad', videoExposure: 100 })).state
-    .videoExposure,
-  3
-);
-console.log(
-  'PASS: neutral output defaults, bounded gamma/channel/exposure controls, global-only routing, persistence, invalid values and reset.'
-);
+
+describe('Video grading state', (): void => {
+  it('starts with neutral output settings', (): void => {
+    const grade = createGrade();
+
+    const actual = grade.state;
+
+    assert.equal(actual.videoGamma, 1);
+    assert.equal(actual.videoExposure, 0);
+    for (const id of [
+      'videoContrast',
+      'videoSaturation',
+      'videoRed',
+      'videoGreen',
+      'videoBlue',
+    ] as const)
+      assert.equal(actual[id], 1, id);
+    for (const id of ['videoHue', 'videoSepia', 'videoGradient'] as const)
+      assert.equal(actual[id], 0, id);
+  });
+
+  it('clamps supported writes and rejects unrelated or non-finite values', (): void => {
+    const grade = createGrade();
+
+    const unrelated = grade.setSlider('spin', 40);
+    grade.setSlider('videoGamma', 0);
+    grade.setSlider('videoGradient', 1000);
+    grade.setSlider('videoExposure', NaN);
+
+    assert.equal(unrelated, false);
+    assert.equal(grade.state.videoGamma, 0.25);
+    assert.equal(grade.state.videoGradient, 100);
+    assert.equal(grade.state.videoExposure, 0);
+  });
+
+  it('resets one control without changing its neighbors', (): void => {
+    const grade = createGrade();
+    grade.setSlider('videoGamma', 2);
+    grade.setSlider('videoRed', 1.7);
+
+    const reset = grade.resetSlider('videoGamma');
+    const unsupported = grade.resetSlider('spin');
+
+    assert.equal(reset, true);
+    assert.equal(unsupported, false);
+    assert.equal(grade.state.videoGamma, 1);
+    assert.equal(grade.state.videoRed, 1.7);
+  });
+
+  it('restores saved settings and can reset the whole grade', (): void => {
+    const original = createGrade();
+    original.setSlider('videoRed', 1.7);
+    original.setSlider('videoGradient', 100);
+
+    const restored = createGrade(JSON.stringify(original.state));
+
+    assert.equal(restored.state.videoRed, 1.7);
+    assert.equal(restored.state.videoGradient, 100);
+
+    restored.reset();
+
+    assert.equal(
+      JSON.stringify(restored.state),
+      JSON.stringify(restored.defaults())
+    );
+  });
+
+  it('falls back safely for corrupt or invalid saved values', (): void => {
+    const corrupt = '{broken';
+    const invalid = JSON.stringify({ videoGamma: 'bad', videoExposure: 100 });
+
+    const fromCorrupt = createGrade(corrupt);
+    const fromInvalid = createGrade(invalid);
+
+    assert.equal(fromCorrupt.state.videoGamma, 1);
+    assert.equal(fromInvalid.state.videoGamma, 1);
+    assert.equal(fromInvalid.state.videoExposure, 3);
+  });
+});

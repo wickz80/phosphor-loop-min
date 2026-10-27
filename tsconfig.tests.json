@@ -5,8 +5,15 @@
     "rootDir": ".",
     "types": ["node"],
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "allowJs": true
   },
-  "include": ["src/**/*.ts", "tests/support/**/*.ts"],
+  "include": [
+    "src/**/*.ts",
+    "tests/support/**/*.ts",
+    "js/**/*.test.ts",
+    "tools/**/*.test.ts",
+    "sw.test.ts"
+  ],
   "exclude": []
 }
